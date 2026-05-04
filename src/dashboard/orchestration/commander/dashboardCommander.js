@@ -17,16 +17,18 @@ import {
     matchPublicSettingsCache,
     putPublicSettingsCache,
     deletePublicSettingsCache,
+    getPublicSettingsCacheHeaders,
     verifyTurnstileToken,
     fetchDashboardAsset,
     fetchMmdbFromUrl,
 } from '../diplomat/dashboardDiplomats.js';
 
-export async function handle({ request, env, route }) {
+export async function handle({ request, env, route, services }) {
     const io = {
         matchPublicSettingsCache,
         putPublicSettingsCache,
         deletePublicSettingsCache,
+        getPublicSettingsCacheHeaders,
         verifyTurnstileToken,
         fetchDashboardAsset,
         fetchMmdbFromUrl,
@@ -46,11 +48,11 @@ export async function handle({ request, env, route }) {
 
     try {
         if (route.kind === 'api-public') {
-            return await handleDashboardPublicApi({ request, env, route, io });
+            return await handleDashboardPublicApi({ request, env, route, io, services });
         }
 
         if (route.kind === 'api-user' || route.kind === 'api-admin' || route.kind === 'api-unknown') {
-            const authPayload = await authenticateDashboardRequest({ request, ctx: env.DB, env });
+            const authPayload = await authenticateDashboardRequest({ request, ctx: env.DB, env, services });
             if (!authPayload) return errorResponse('Unauthorized', 401);
 
             if (authPayload.role === 'admin') {
@@ -59,11 +61,11 @@ export async function handle({ request, env, route }) {
             }
 
             if (route.kind === 'api-user') {
-                return await handleDashboardUserApi({ request, env, route, authPayload });
+                return await handleDashboardUserApi({ request, env, route, authPayload, services });
             }
 
             if (route.kind === 'api-admin') {
-                return await handleDashboardAdminApi({ request, env, route, authPayload, io });
+                return await handleDashboardAdminApi({ request, env, route, authPayload, io, services });
             }
 
             return errorResponse('Not Found', 404);

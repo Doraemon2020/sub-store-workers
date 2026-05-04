@@ -14,9 +14,6 @@ import {
 } from './services/userService.js';
 import { getSystemSettings, updateSystemSettings } from './services/systemSettingsService.js';
 import { getRequestId, debug, warn } from '../../utils/logger.js';
-import { getAccessLogFromUserDo } from '../../atoms/cf/bindings.js';
-import { upsertMmdbFile } from '../../atoms/indexSql/indexSqlAtoms.js';
-import { selectMmdbFilesMeta } from '../../atoms/indexSql/indexSqlAtoms.js';
 import { extractMmdbBuildEpochFromArrayBuffer } from '../atoms/mmdb/extractMmdbBuildEpochFromArrayBuffer.js';
 
 function parseAdminUserRoute(path) {
@@ -50,7 +47,7 @@ function normalizeHttpUrl(value) {
     return parsed.toString();
 }
 
-export async function handleDashboardAdminApi({ request, env, authPayload, io }) {
+export async function handleDashboardAdminApi({ request, env, authPayload, io, services }) {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
@@ -106,7 +103,7 @@ export async function handleDashboardAdminApi({ request, env, authPayload, io })
     }
 
     if (path === '/api/dashboard/admin/mmdb/meta' && method === 'GET') {
-        const files = selectMmdbFilesMeta(ctx.storage) || [];
+        const files = await services.mmdbGateway.getMmdbMeta();
         return jsonResponse({ files });
     }
 
@@ -161,7 +158,7 @@ export async function handleDashboardAdminApi({ request, env, authPayload, io })
                 `[MMDB] [${requestId}] parsed ${source.name}: bytes=${remote.arrayBuffer.byteLength} etag=${remote.etag || ''} buildEpoch=${buildEpoch || 'null'}`,
             );
 
-            const upsertResult = upsertMmdbFile(ctx.storage, {
+            const upsertResult = await services.mmdbGateway.putMmdbFile({
                 name: source.name,
                 etag: remote.etag || '',
                 sourceUrl: source.url,
@@ -176,7 +173,7 @@ export async function handleDashboardAdminApi({ request, env, authPayload, io })
             );
         }
 
-        const files = selectMmdbFilesMeta(ctx.storage) || [];
+        const files = await services.mmdbGateway.getMmdbMeta();
         debug(`[MMDB] [${requestId}] update success, meta files=${files.length}`);
         return jsonResponse({ ok: true, files });
     }
@@ -197,7 +194,7 @@ export async function handleDashboardAdminApi({ request, env, authPayload, io })
             if (!user) return errorResponse('Not Found', 404);
             const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
             const beforeId = parseInt(url.searchParams.get('beforeId') || '0', 10) || 0;
-            const body = await getAccessLogFromUserDo({ env, userId, limit, beforeId, requestId });
+            const body = await services.userGateway.listAccessLog(userId, { limit, beforeId, requestId });
             return jsonResponse(body);
         }
 

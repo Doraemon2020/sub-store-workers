@@ -2,13 +2,12 @@
  * L4 Atom
  *
  * Ensure GeoIP MMDB readers are loaded (once per isolate).
- * Data source: IndexDO (Country.mmdb / Country-asn.mmdb)
+ * Data source: runtime MMDB gateway (Country.mmdb / Country-asn.mmdb)
  */
 
 import { Buffer } from 'node:buffer';
 import * as mmdb from 'mmdb-lib';
 import { debug, warn, error as logError } from '../../../utils/logger.js';
-import { getMmdbFileFromIndexDo } from '../../cf/bindings.js';
 
 function getGlobalCache() {
     if (!globalThis.__surge_geoip_cache__) {
@@ -26,7 +25,7 @@ function toBufferFromArrayBuffer(ab) {
     return Buffer.from(ab);
 }
 
-export async function ensureGeoDbLoaded(env) {
+export async function ensureGeoDbLoaded(env, { requestId = 'unknown' } = {}) {
     const cache = getGlobalCache();
     if (cache.countryReader && cache.asnReader) return cache;
     if (cache.readyPromise) {
@@ -36,31 +35,41 @@ export async function ensureGeoDbLoaded(env) {
 
     cache.readyPromise = (async () => {
         try {
-            const requestId = globalThis.__current_request_id__ || 'unknown';
-            debug(`[GeoIP] [${requestId}] loading mmdb from IndexDO ...`);
+            const mmdbGateway = env?.__mmdbGateway;
+            debug(`[GeoIP] [${requestId}] loading mmdb from runtime gateway ...`);
 
-            const [countryFile, asnFile] = await Promise.all([
-                getMmdbFileFromIndexDo({ env, name: 'Country.mmdb', requestId }),
-                getMmdbFileFromIndexDo({ env, name: 'Country-asn.mmdb', requestId }),
-            ]);
+            if (!mmdbGateway) {
+                warn('[GeoIP] runtime mmdb gateway not available; $utils.geoip/ipasn/ipaso will return undefined');
+                return;
+            }
+
+            const [countryFile, asnFile] = await Promise.all(
+                [
+                    mmdbGateway.getMmdbFile('Country.mmdb'),
+                    mmdbGateway.getMmdbFile('Country-asn.mmdb'),
+                ],
+            );
 
             debug(
-                `[GeoIP] [${requestId}] IndexDO get Country.mmdb: ok=${!!countryFile?.ok} status=${countryFile?.status ?? 'n/a'} size=${countryFile?.arrayBuffer?.byteLength ?? 0}`,
+                `[GeoIP] [${requestId}] gateway get Country.mmdb: ok=${!!countryFile?.ok} status=${countryFile?.status ?? 'n/a'} size=${countryFile?.arrayBuffer?.byteLength ?? 0}`,
             );
             debug(
-                `[GeoIP] [${requestId}] IndexDO get Country-asn.mmdb: ok=${!!asnFile?.ok} status=${asnFile?.status ?? 'n/a'} size=${asnFile?.arrayBuffer?.byteLength ?? 0}`,
+                `[GeoIP] [${requestId}] gateway get Country-asn.mmdb: ok=${!!asnFile?.ok} status=${asnFile?.status ?? 'n/a'} size=${asnFile?.arrayBuffer?.byteLength ?? 0}`,
             );
 
-            if (!countryFile?.arrayBuffer || !asnFile?.arrayBuffer) {
+            const countryBuffer = countryFile?.arrayBuffer || countryFile?.data?.buffer?.slice?.(0) || countryFile?.data;
+            const asnBuffer = asnFile?.arrayBuffer || asnFile?.data?.buffer?.slice?.(0) || asnFile?.data;
+
+            if (!countryBuffer || !asnBuffer) {
                 if (!cache.loggedMissing) {
                     cache.loggedMissing = true;
-                    warn('[GeoIP] mmdb not found in IndexDO; $utils.geoip/ipasn/ipaso will return undefined');
+                    warn('[GeoIP] mmdb not found in runtime storage; $utils.geoip/ipasn/ipaso will return undefined');
                 }
                 return;
             }
 
-            const countryBuf = toBufferFromArrayBuffer(countryFile.arrayBuffer);
-            const asnBuf = toBufferFromArrayBuffer(asnFile.arrayBuffer);
+            const countryBuf = Buffer.from(countryBuffer instanceof Uint8Array ? countryBuffer : toBufferFromArrayBuffer(countryBuffer));
+            const asnBuf = Buffer.from(asnBuffer instanceof Uint8Array ? asnBuffer : toBufferFromArrayBuffer(asnBuffer));
 
             cache.countryReader = new mmdb.Reader(countryBuf);
             cache.asnReader = new mmdb.Reader(asnBuf);
@@ -69,8 +78,8 @@ export async function ensureGeoDbLoaded(env) {
         } catch (e) {
             if (!cache.loggedMissing) {
                 cache.loggedMissing = true;
-                logError('[GeoIP] failed to load MMDB from IndexDO:', e?.message || e);
-                logError('[GeoIP] expected mmdb in IndexDO: Country.mmdb, Country-asn.mmdb');
+                logError('[GeoIP] failed to load MMDB from runtime storage:', e?.message || e);
+                logError('[GeoIP] expected mmdb in storage: Country.mmdb, Country-asn.mmdb');
             }
         }
     })();

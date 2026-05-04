@@ -1,32 +1,30 @@
 /**
  * L3 - Molecule
- * IndexDO：透传用户 data（读/写/删）到 UserDO。
+ * Index 域：透传用户 data（读/写/删）到 User 域 gateway。
  */
 
 import { jsonResponse, errorResponse } from '../../atoms/http/httpAtoms.js';
 import { readJsonBody } from '../../atoms/http/httpAtoms.js';
-import { getUserDataFromUserDo } from '../../atoms/cf/bindings.js';
-import { putUserDataToUserDo } from '../../atoms/cf/bindings.js';
-import { deleteUserDataFromUserDo } from '../../atoms/cf/bindings.js';
 
-export async function proxyUserData({ request, env, requestId, route }) {
+export async function proxyUserData({ request, route, userGateway }) {
     const userId = route.userId || 0;
     if (!userId) return errorResponse('userId required', 400);
 
     if (route.method === 'GET') {
-        const data = await getUserDataFromUserDo({ env, userId, requestId });
+        const rawData = await userGateway.getUserDataString(userId);
+        const data = rawData ? JSON.parse(rawData) : null;
         return jsonResponse({ data });
     }
 
     if (route.method === 'PUT') {
         const body = (await readJsonBody(request)) || {};
-        const ok = await putUserDataToUserDo({ env, userId, data: body?.data ?? {}, requestId });
-        return jsonResponse({ ok });
+        await userGateway.putUserDataString(userId, JSON.stringify(body?.data ?? {}));
+        return jsonResponse({ ok: true });
     }
 
     if (route.method === 'DELETE') {
-        const ok = await deleteUserDataFromUserDo({ env, userId, requestId });
-        return jsonResponse({ ok });
+        await userGateway.deleteUserDataString(userId);
+        return jsonResponse({ ok: true });
     }
 
     return errorResponse('Method Not Allowed', 405);

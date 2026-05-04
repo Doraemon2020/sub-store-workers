@@ -1,17 +1,16 @@
 /**
  * L3 - Molecule
- * IndexDO：按名称返回 mmdb 文件（BLOB）。
+ * Index 域：按名称返回 mmdb 文件（BLOB）。
  */
 
 import { errorResponse } from '../../atoms/http/httpAtoms.js';
 import { binaryResponse } from '../../atoms/http/httpAtoms.js';
-import { selectMmdbFileByName } from '../../atoms/indexSql/indexSqlAtoms.js';
 
-export async function getMmdbFile({ storage, route }) {
+export async function getMmdbFile({ route, mmdbGateway }) {
     const name = route?.name || '';
     if (!name) return errorResponse('Missing mmdb name', 400);
 
-    const row = selectMmdbFileByName(storage, name);
+    const row = await mmdbGateway.getMmdbFile(name);
     if (!row?.data) return errorResponse('Not Found', 404);
 
     const headers = {

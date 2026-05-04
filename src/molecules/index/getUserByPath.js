@@ -1,16 +1,15 @@
 /**
  * L3 - Molecule
- * IndexDO：按 path 反查用户。
+ * Index 域：按 path 反查用户。
  */
 
 import { jsonResponse, errorResponse } from '../../atoms/http/httpAtoms.js';
-import { selectUserByPath } from '../../atoms/indexSql/indexSqlAtoms.js';
 
-export async function getUserByPath({ storage, route }) {
+export async function getUserByPath({ route, indexGateway }) {
     const userPath = route.userPath || '';
     if (!userPath) return errorResponse('path required', 400);
 
-    const row = selectUserByPath(storage, userPath);
+    const row = await indexGateway.getUserByPath(userPath);
     if (!row) return errorResponse('Not Found', 404);
     return jsonResponse(row);
 }

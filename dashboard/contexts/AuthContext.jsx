@@ -27,6 +27,22 @@ export const AuthProvider = ({ children }) => {
     const isAuthenticated = !!token;
     const isAdmin = role === 'admin';
 
+    const refreshFrontendUrl = async () => {
+        try {
+            const settingsRes = await fetch('/api/dashboard/settings/public');
+            if (!settingsRes.ok) return null;
+            const settings = await settingsRes.json();
+            if (settings.frontendUrl) {
+                localStorage.setItem('ss_frontend_url', settings.frontendUrl);
+                setFrontendUrl(settings.frontendUrl);
+                return settings.frontendUrl;
+            }
+            return null;
+        } catch {
+            return null;
+        }
+    };
+
     // 验证 token 有效性（仅在明确 401 时清除）
     useEffect(() => {
         const validateToken = async () => {
@@ -54,18 +70,7 @@ export const AuthProvider = ({ children }) => {
                     setFrontendUrl(FRONTEND_DEFAULT_URL);
                 } else if (res.ok) {
                     // 刷新 frontendUrl
-                    try {
-                        const settingsRes = await fetch('/api/dashboard/settings/public');
-                        if (settingsRes.ok) {
-                            const settings = await settingsRes.json();
-                            if (settings.frontendUrl) {
-                                localStorage.setItem('ss_frontend_url', settings.frontendUrl);
-                                setFrontendUrl(settings.frontendUrl);
-                            }
-                        }
-                    } catch (e) {
-                        // 忽略刷新失败
-                    }
+                    await refreshFrontendUrl();
                 }
                 // 其他错误（网络问题、超时等）不处理，保持当前状态
             } catch (e) {
@@ -124,6 +129,7 @@ export const AuthProvider = ({ children }) => {
         login,
         logout,
         updatePath,
+        refreshFrontendUrl,
         setMustChangePassword,
     };
 

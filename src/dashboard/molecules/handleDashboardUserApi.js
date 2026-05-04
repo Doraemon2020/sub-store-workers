@@ -13,10 +13,9 @@ import { hashPassword } from '../atoms/crypto/password.js';
 import { getSystemSettings } from './services/systemSettingsService.js';
 import { getUserById, getUser, updateUserData, updatePassword, updateUsername, updatePath, generatePath } from './services/userService.js';
 import { getRequestId } from '../../utils/logger.js';
-import { getAccessLogFromUserDo } from '../../atoms/cf/bindings.js';
 import { normalizeUserDataToObject } from '../atoms/user/normalizeUserDataToObject.js';
 
-export async function handleDashboardUserApi({ request, env, authPayload }) {
+export async function handleDashboardUserApi({ request, env, authPayload, services }) {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
@@ -34,7 +33,7 @@ export async function handleDashboardUserApi({ request, env, authPayload }) {
         const requestId = getRequestId(request);
         const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get('limit') || '50', 10) || 50));
         const beforeId = parseInt(url.searchParams.get('beforeId') || '0', 10) || 0;
-        const body = await getAccessLogFromUserDo({ env, userId: authPayload.id, limit, beforeId, requestId });
+        const body = await services.userGateway.listAccessLog(authPayload.id, { limit, beforeId, requestId });
         return jsonResponse(body);
     }
 

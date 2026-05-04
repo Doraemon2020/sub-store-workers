@@ -2,7 +2,7 @@
 # 复制此文件为 wrangler.toml 并填写实际配置
 
 name = "sub-store"
-main = "src/index.js"
+main = "src/workers.js"
 compatibility_date = "2025-11-17"
 compatibility_flags = ["nodejs_compat"]
 

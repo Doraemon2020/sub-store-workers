@@ -5,11 +5,6 @@
 import { error as logError } from '../../../utils/logger.js';
 import { generateSvgCaptcha } from '../../atoms/captcha/captchaRenderAtoms.js';
 import { getCaptchaDataUrlFromSvg } from '../../atoms/captcha/captchaRenderAtoms.js';
-import { deleteExpiredCaptchas } from '../../atoms/captchaSql/captchaSqlAtoms.js';
-import { insertCaptcha } from '../../atoms/captchaSql/captchaSqlAtoms.js';
-import { getCaptchaForVerify } from '../../atoms/captchaSql/captchaSqlAtoms.js';
-import { deleteCaptcha } from '../../atoms/captchaSql/captchaSqlAtoms.js';
-import { incrementCaptchaAttempts } from '../../atoms/captchaSql/captchaSqlAtoms.js';
 
 // 验证码配置
 const CAPTCHA_EXPIRES = 5 * 60 * 1000; // 5分钟过期
@@ -19,10 +14,8 @@ const CAPTCHA_EXPIRES = 5 * 60 * 1000; // 5分钟过期
  */
 async function cleanExpired(ctx) {
     try {
-        deleteExpiredCaptchas(ctx, Date.now());
-    } catch (e) {
-        // 忽略清理错误
-    }
+        await ctx.services.indexGateway.deleteExpiredCaptchas(Date.now());
+    } catch {}
 }
 
 /**
@@ -37,7 +30,7 @@ export async function createCaptcha(ctx) {
     const { id, code, svg } = generateSvgCaptcha();
     const expiresAt = Date.now() + CAPTCHA_EXPIRES;
 
-    insertCaptcha(ctx, id, code.toUpperCase(), expiresAt);
+    await ctx.services.indexGateway.createCaptcha({ id, code: code.toUpperCase(), expiresAt });
 
     return { id, svg };
 }
@@ -53,31 +46,31 @@ export async function verifyCaptcha(ctx, id, input) {
     if (!id || !input) return false;
 
     try {
-        const result = getCaptchaForVerify(ctx, id);
+        const result = await ctx.services.indexGateway.getCaptchaForVerify(id);
 
         if (!result) return false;
 
         // 检查是否过期
         if (Date.now() > result.expires_at) {
-            deleteCaptcha(ctx, id);
+            await ctx.services.indexGateway.deleteCaptcha(id);
             return false;
         }
 
         // 限制尝试次数
         if (result.attempts >= 3) {
-            deleteCaptcha(ctx, id);
+            await ctx.services.indexGateway.deleteCaptcha(id);
             return false;
         }
 
         // 更新尝试次数
-        incrementCaptchaAttempts(ctx, id);
+        await ctx.services.indexGateway.incrementCaptchaAttempts(id);
 
         // 验证（不区分大小写）
         const isValid = result.code === input.toUpperCase();
 
         // 验证成功后删除，防止重复使用
         if (isValid) {
-            deleteCaptcha(ctx, id);
+            await ctx.services.indexGateway.deleteCaptcha(id);
         }
 
         return isValid;

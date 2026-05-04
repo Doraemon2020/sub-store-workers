@@ -1,6 +1,6 @@
 /**
  * L4 - Atom
- * 在 UserDO 内执行 Sub-Store Cron 请求（每个用户串行）。
+ * 在 User 域内执行 Sub-Store Cron 请求（每个用户串行）。
  *
  * 说明：
  * - 该 atom 是“Sub-Store 引擎”的运行封装（对本项目来说属于实现细节）。
@@ -12,6 +12,13 @@ import { debug, warn, error as logError } from '../../utils/logger.js';
 import { createHttpClient } from '../../adapters/http-client.js';
 import { ensureSubStoreQuickJsScriptEngineInstalled } from '../../adapters/quickjs/substore-script-engine.js';
 import { ensureSurgeGeoipInstalled } from '../surge/geoip/ensureSurgeGeoipInstalled.js';
+import {
+    createSubStoreRequestContext,
+    deleteSubStoreRequestContext,
+    flushSubStoreRequestContext,
+    installSubStoreRuntimeGlobals,
+    runWithSubStoreContext,
+} from './subStoreRequestContext.js';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
 import streamPromises from 'node:stream/promises';
@@ -69,13 +76,15 @@ function ensurePolyfills() {
             return num * (multipliers[unit] || 1);
         };
     }
+
+    installSubStoreRuntimeGlobals();
 }
 
 function setupGlobalsForSubStore(env, userSettings) {
     globalThis.$httpClient = createHttpClient();
 
     const notification = userSettings?.notification || { type: 'none' };
-    globalThis.$notification = {
+    const notificationProxy = {
         post: (title, subtitle, content) => {
             debug(`[Notification] ${title}: ${subtitle} - ${content}`);
 
@@ -94,20 +103,12 @@ function setupGlobalsForSubStore(env, userSettings) {
         },
     };
 
-    globalThis.$environment = {
+    const environment = {
         'surge-version': userSettings?.surgeVersion || '5.0.0',
         'surge-build': userSettings?.surgeBuild || '2000',
         language: 'zh-Hans',
     };
-    globalThis.__env__ = env;
-    globalThis.process = {
-        env: env || {},
-        version: 'v20.0.0',
-        argv: [],
-        cwd: () => '/',
-    };
-    globalThis.__filename = '/worker.js';
-    globalThis.__dirname = '/';
+    return { notification: notificationProxy, environment };
 }
 
 async function sendBarkNotification(config, title, subtitle, content) {
@@ -155,12 +156,15 @@ export async function runSubStoreCronForUser({ user, env }) {
     ensureSubStoreQuickJsScriptEngineInstalled();
 
     const userSettings = parseUserSettings(user);
-    setupGlobalsForSubStore(env, userSettings);
+    const subStoreGlobals = setupGlobalsForSubStore(env, userSettings);
+
+    const requestId = `cron-${user?.id || 'unknown'}-${Date.now()}`;
 
     // Surge $utils.geoip/ipasn/ipaso (GeoIP)
-    await ensureSurgeGeoipInstalled(env);
+    await ensureSurgeGeoipInstalled(env, { requestId });
 
     // 初始化用户专属存储
+    let subStoreContext = null;
     const userStorage = (() => {
         const DEFAULT_KEY = '__default__';
         let userData = {};
@@ -180,8 +184,10 @@ export async function runSubStoreCronForUser({ user, env }) {
             write: (data, key) => {
                 const storageKey = key || DEFAULT_KEY;
                 userData[storageKey] = data;
-                globalThis.__user_data_dirty__ = true;
-                globalThis.__user_data__ = userData;
+                if (subStoreContext) {
+                    subStoreContext.dirty = true;
+                    subStoreContext.userData = userData;
+                }
                 if (storageKey === 'sub-store') {
                     debug('[Workers] 检测到备份恢复，标记需要重新初始化');
                     globalThis.__need_reinit__ = true;
@@ -191,15 +197,7 @@ export async function runSubStoreCronForUser({ user, env }) {
             getData: () => userData,
         };
     })();
-    globalThis.$persistentStore = userStorage;
-    globalThis.__user_data_dirty__ = false;
-    globalThis.__user_data__ = null;
 
-    const requestId = `cron-${user?.id || 'unknown'}-${Date.now()}`;
-    globalThis.__current_request_id__ = requestId;
-    if (!globalThis.__substore_request_caches__) {
-        globalThis.__substore_request_caches__ = new Map();
-    }
     const cacheData = (() => {
         try {
             return JSON.parse(userStorage.read('sub-store') || '{}');
@@ -207,34 +205,49 @@ export async function runSubStoreCronForUser({ user, env }) {
             return {};
         }
     })();
-    globalThis.__substore_request_caches__.set(requestId, cacheData);
 
     const $request = buildRefreshRequest();
+    $request.__requestId = requestId;
+    subStoreContext = createSubStoreRequestContext({
+        requestId,
+        request: $request,
+        user,
+        env,
+        persistentStore: userStorage,
+        notification: subStoreGlobals.notification,
+        environment: subStoreGlobals.environment,
+        cache: cacheData,
+    });
     debug(`[SubStoreAtom] [${requestId}] cron refresh`);
 
-    let timeoutId = null;
-    await new Promise((resolve) => {
-        globalThis.$done = () => {
-            if (timeoutId) clearTimeout(timeoutId);
-            resolve();
-        };
-        timeoutId = setTimeout(() => {
-            warn(`[SubStoreAtom] [${requestId}] cron 超时`);
-            resolve();
-        }, 60000);
+    await runWithSubStoreContext(subStoreContext, async () => {
+        let timeoutId = null;
+        await new Promise((resolve) => {
+            subStoreContext.done = () => {
+                if (timeoutId) clearTimeout(timeoutId);
+                subStoreContext.done = null;
+                resolve();
+            };
+            timeoutId = setTimeout(() => {
+                warn(`[SubStoreAtom] [${requestId}] cron 超时`);
+                subStoreContext.done = null;
+                resolve();
+            }, 60000);
 
-        initSubStore($request).catch((e) => {
-            if (timeoutId) clearTimeout(timeoutId);
-            logError(`[SubStoreAtom] [${requestId}] initSubStore failed:`, e?.message || e);
-            resolve();
+            initSubStore($request).catch((e) => {
+                if (timeoutId) clearTimeout(timeoutId);
+                subStoreContext.done = null;
+                logError(`[SubStoreAtom] [${requestId}] initSubStore failed:`, e?.message || e);
+                resolve();
+            });
         });
     });
 
+    const dataString = flushSubStoreRequestContext(subStoreContext);
+
     if (typeof env?.__saveUserData === 'function') {
-        await env.__saveUserData(user?.id);
+        await env.__saveUserData(user?.id, dataString);
     }
 
-    if (globalThis.__substore_request_caches__) {
-        globalThis.__substore_request_caches__.delete(requestId);
-    }
+    deleteSubStoreRequestContext(requestId);
 }

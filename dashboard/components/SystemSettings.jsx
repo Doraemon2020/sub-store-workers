@@ -6,7 +6,7 @@ import Footer from './Footer';
 
 const SystemSettings = () => {
     const navigate = useNavigate();
-    const { token } = useAuth();
+    const { token, refreshFrontendUrl } = useAuth();
     const toast = useToast();
 
     const [settings, setSettings] = useState({});
@@ -60,6 +60,7 @@ const SystemSettings = () => {
                 body: JSON.stringify(settingsToSave)
             });
             if (res.ok) {
+                await refreshFrontendUrl();
                 toast.success('设置已保存');
             } else {
                 toast.error('保存失败');

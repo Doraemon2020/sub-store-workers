@@ -1,5 +1,7 @@
 import { debug, error as logError } from '../../../utils/logger.js';
 
+const PUBLIC_SETTINGS_CACHE_TAG = 'dashboard-public-settings';
+
 function buildCacheKey(request) {
     return new Request(request.url, { method: 'GET' });
 }
@@ -10,20 +12,45 @@ function buildPublicSettingsCacheKey(request) {
 }
 
 export async function matchPublicSettingsCache({ request }) {
+    if (!globalThis.caches?.default) {
+        return null;
+    }
     const cacheKey = buildCacheKey(request);
     return await caches.default.match(cacheKey);
 }
 
 export async function putPublicSettingsCache({ request, response }) {
+    if (!globalThis.caches?.default) {
+        return { success: true, mode: 'header-cache-only' };
+    }
     const cacheKey = buildCacheKey(request);
     await caches.default.put(cacheKey, response.clone());
     return { success: true };
 }
 
 export async function deletePublicSettingsCache({ request }) {
+    if (!globalThis.caches?.default) {
+        try {
+            await fetch('http://cache.localhost/invalidate/http', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tags: [PUBLIC_SETTINGS_CACHE_TAG] }),
+            });
+        } catch {
+            // ignore in runtimes without cache invalidation endpoint
+        }
+        return { success: true, mode: 'tag-invalidation-or-noop' };
+    }
     const cacheKey = buildPublicSettingsCacheKey(request);
     await caches.default.delete(cacheKey);
     return { success: true };
+}
+
+export function getPublicSettingsCacheHeaders() {
+    return {
+        'Cache-Control': 'public, max-age=60, s-maxage=60, stale-while-revalidate=300',
+        'Deno-Cache-Tag': PUBLIC_SETTINGS_CACHE_TAG,
+    };
 }
 
 export async function verifyTurnstileToken({ token, secretKey, ip }) {
@@ -44,7 +71,10 @@ export async function verifyTurnstileToken({ token, secretKey, ip }) {
 }
 
 export async function fetchDashboardAsset({ env, requestOrUrl }) {
-    return await env.ASSETS.fetch(requestOrUrl);
+    if (!env?.__dashboardAssetFetcher?.fetchDashboardAsset) {
+        return new Response('Dashboard asset gateway not available', { status: 501 });
+    }
+    return await env.__dashboardAssetFetcher.fetchDashboardAsset({ requestOrUrl });
 }
 
 export async function fetchMmdbFromUrl({ url, requestId }) {

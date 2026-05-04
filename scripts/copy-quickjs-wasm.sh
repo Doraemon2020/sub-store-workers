@@ -9,25 +9,21 @@ set -euo pipefail
 # Ref: https://github.com/justjake/quickjs-emscripten/tree/main/examples/cloudflare-workers
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT_DIR="${ROOT_DIR}/src/adapters/quickjs/wasm"
+OUT_DIR="${ROOT_DIR}/src/platform/workers/runtime/wasm"
 
 mkdir -p "${OUT_DIR}"
 
 resolve_wasm_path() {
   local pkg="$1"
-  local expr="require.resolve('${pkg}/wasm')"
+  local pkg_dir="${ROOT_DIR}/node_modules/${pkg}"
+  local wasm_file="${pkg_dir}/dist/emscripten-module.wasm"
 
-  if command -v node >/dev/null 2>&1; then
-    node -p "${expr}"
+  if [[ -f "${wasm_file}" ]]; then
+    printf '%s\n' "${wasm_file}"
     return
   fi
 
-  if command -v bun >/dev/null 2>&1; then
-    bun -p "${expr}"
-    return
-  fi
-
-  echo "[copy-quickjs-wasm] Missing runtime: need node or bun" >&2
+  echo "[copy-quickjs-wasm] wasm file not found for ${pkg}: ${wasm_file}" >&2
   exit 1
 }
 

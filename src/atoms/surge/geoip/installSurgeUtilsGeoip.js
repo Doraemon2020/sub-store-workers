@@ -33,10 +33,9 @@ function ensureUtilsObject() {
     return globalThis.$utils;
 }
 
-export function installSurgeUtilsGeoip({ countryReader, asnReader }) {
+export function installSurgeUtilsGeoip({ countryReader, asnReader, requestId = 'unknown' }) {
     const $utils = ensureUtilsObject();
 
-    const requestId = globalThis.__current_request_id__ || 'unknown';
     debug(
         `[GeoIP] [${requestId}] install $utils geoip: countryReader=${!!countryReader} asnReader=${!!asnReader}`,
     );

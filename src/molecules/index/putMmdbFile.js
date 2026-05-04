@@ -1,14 +1,13 @@
 /**
  * L3 - Molecule
- * IndexDO：写入 mmdb 文件（由 Worker 上传）。
+ * Index 域：写入 mmdb 文件。
  */
 
 import { errorResponse, jsonResponse } from '../../atoms/http/httpAtoms.js';
-import { upsertMmdbFile } from '../../atoms/indexSql/indexSqlAtoms.js';
 
 const ALLOWED_NAMES = new Set(['Country.mmdb', 'Country-asn.mmdb']);
 
-export async function putMmdbFile({ request, storage, route }) {
+export async function putMmdbFile({ request, route, mmdbGateway }) {
     const name = route?.name || '';
     if (!ALLOWED_NAMES.has(name)) {
         return errorResponse('Invalid mmdb name', 400);
@@ -35,7 +34,7 @@ export async function putMmdbFile({ request, storage, route }) {
     }
 
     const now = Date.now();
-    upsertMmdbFile(storage, {
+    await mmdbGateway.putMmdbFile({
         name,
         etag,
         sourceUrl,

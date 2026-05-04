@@ -5,8 +5,16 @@
  * while keeping the script API surface as compatible as possible.
  */
 
-import { getQuickJsModule } from './quickjs-module.js';
 import { debug, warn } from '../../utils/logger.js';
+
+let quickJsModuleLoaderPromise = null;
+
+async function getQuickJsModule() {
+    if (!quickJsModuleLoaderPromise) {
+        quickJsModuleLoaderPromise = import('./quickjs-module.js').then((mod) => mod.getQuickJsModule());
+    }
+    return await quickJsModuleLoaderPromise;
+}
 
 const GLOBAL_CREATE_DYNAMIC_FUNCTION = '__substore_workers_createDynamicFunction__';
 
@@ -663,7 +671,7 @@ export function ensureSubStoreQuickJsScriptEngineInstalled({
 
         // Debug trace: whether Script Filter/Operator reached QuickJS.
         // This is intentionally lightweight and only logs when DEBUG=true.
-        const requestId = globalThis.__current_request_id__ || 'unknown';
+        const requestId = globalThis.__substore_get_active_context__?.()?.requestId || 'unknown';
         if (name === 'filter' || name === 'operator') {
             const mode = normalizedScript !== script ? 'shortcut' : 'function';
             debug(`[SubStoreScript] [${requestId}] compile ${name} (${mode})`);
@@ -689,7 +697,7 @@ export function ensureSubStoreQuickJsScriptEngineInstalled({
 
         // Return a function compatible with upstream createDynamicFunction() output.
         return async (input = [], targetPlatform, context) => {
-            const requestId2 = globalThis.__current_request_id__ || 'unknown';
+            const requestId2 = globalThis.__substore_get_active_context__?.()?.requestId || 'unknown';
             if (name === 'filter' || name === 'operator') {
                 const inputHint = Array.isArray(input) ? `list(${input.length})` : 'artifact';
                 debug(`[SubStoreScript] [${requestId2}] run ${name} ${inputHint}`);

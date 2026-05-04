@@ -1,12 +1,11 @@
 /**
  * L3 - Molecule
- * IndexDO：返回 mmdb 文件元信息（供 Worker/UserDO 判断是否已缓存）。
+ * Index 域：返回 mmdb 文件元信息。
  */
 
 import { jsonResponse } from '../../atoms/http/httpAtoms.js';
-import { selectMmdbFilesMeta } from '../../atoms/indexSql/indexSqlAtoms.js';
 
-export async function getMmdbMeta({ storage }) {
-    const rows = selectMmdbFilesMeta(storage) || [];
+export async function getMmdbMeta({ mmdbGateway }) {
+    const rows = await mmdbGateway.getMmdbMeta();
     return jsonResponse({ files: rows });
 }

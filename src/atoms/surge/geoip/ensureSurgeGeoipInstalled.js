@@ -10,10 +10,11 @@
 import { ensureGeoDbLoaded } from './ensureGeoDbLoaded.js';
 import { installSurgeUtilsGeoip } from './installSurgeUtilsGeoip.js';
 
-export async function ensureSurgeGeoipInstalled(env) {
-    const cache = await ensureGeoDbLoaded(env);
+export async function ensureSurgeGeoipInstalled(env, { requestId } = {}) {
+    const cache = await ensureGeoDbLoaded(env, { requestId });
     installSurgeUtilsGeoip({
         countryReader: cache.countryReader,
         asnReader: cache.asnReader,
+        requestId,
     });
 }

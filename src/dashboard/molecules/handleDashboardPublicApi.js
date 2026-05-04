@@ -10,11 +10,10 @@ import { jsonResponse, errorResponse } from '../atoms/http/httpAtoms.js';
 import { signJwtToken } from '../atoms/auth/authAtoms.js';
 import { hashPassword, verifyPassword } from '../atoms/crypto/password.js';
 import { createCaptcha, verifyCaptcha } from './services/captchaService.js';
-import { getUser, createUser } from './services/userService.js';
+import { getUser, createUser, countUsers } from './services/userService.js';
 import { getSystemSettings } from './services/systemSettingsService.js';
-import { countUsers } from '../atoms/userSql/userSqlAtoms.js';
 
-export async function handleDashboardPublicApi({ request, env, io }) {
+export async function handleDashboardPublicApi({ request, env, io, services: _services }) {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method;
@@ -42,7 +41,10 @@ export async function handleDashboardPublicApi({ request, env, io }) {
             turnstileSiteKey,
             passwordMinLength: settings.passwordMinLength,
         });
-        response.headers.set('Cache-Control', 'public, max-age=60');
+        const cacheHeaders = io.getPublicSettingsCacheHeaders();
+        for (const [key, value] of Object.entries(cacheHeaders)) {
+            response.headers.set(key, value);
+        }
         await io.putPublicSettingsCache({ request, response });
         return response;
     }

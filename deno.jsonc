@@ -1,0 +1,21 @@
+{
+  // Deno Deploy source-of-truth config.
+  // Notes:
+  // - For local `deno deploy create`, pass `--org/--app` via CLI.
+  // - Deploy build/runtime behavior should read from this file.
+  "nodeModulesDir": "auto",
+  "tasks": {
+    "build": "deno task build:deploy",
+    "build:dashboard": "vite build --config vite.deno.config.js",
+    "build:deploy": "deno task fetch:substore && npm run prepare:quickjs-wasm && deno task build:dashboard && npm run build:substore-deno",
+    "build:deno": "npm run prepare:quickjs-wasm && deno task build:dashboard && npm run build:substore-deno",
+    "migrate": "deno run -A scripts/deno-postgres-migrate.mjs",
+    "dev:deno": "npm run prepare:quickjs-wasm && npm run build:substore-deno && deno run -A src/deno.js",
+    "fetch:substore": "bash scripts/fetch-substore.sh && deno task install:backend",
+    "install:backend": "cd sub-store/backend && npm install --ignore-scripts"
+  },
+  "deploy": {
+    "org": "saintwe",
+    "app": "sub-store"
+  }
+}

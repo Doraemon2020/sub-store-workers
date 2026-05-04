@@ -75,14 +75,14 @@ export function request(requestId, ...args) {
 }
 
 /**
- * Workers 简略请求日志 - 始终输出
+ * 简略请求日志 - 始终输出
  */
 export function requestBrief(requestId, method, path) {
-    console.log(`[Workers] [${requestId}] ${method} ${path}`);
+    console.log(`[HTTP] [${requestId}] ${method} ${path}`);
 }
 
 /**
- * 获取/生成 requestId（用于串联 Worker -> DO -> Sub-Store 的日志）
+ * 获取/生成 requestId（用于串联入口 -> 域处理 -> Sub-Store 的日志）
  * - 优先使用上游传入的 X-Request-Id
  * - 其次使用 Cloudflare 的 CF-Ray
  * - 最后生成一个随机值

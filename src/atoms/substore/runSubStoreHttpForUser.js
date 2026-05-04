@@ -1,6 +1,6 @@
 /**
  * L4 - Atom
- * 在 UserDO 内执行 Sub-Store HTTP 请求（每个用户串行）。
+ * 在 User 域内执行 Sub-Store HTTP 请求（每个用户串行）。
  *
  * 说明：
  * - 该 atom 是“Sub-Store 引擎”的运行封装（对本项目来说属于实现细节）。
@@ -12,6 +12,13 @@ import { debug, warn, error as logError } from '../../utils/logger.js';
 import { createHttpClient } from '../../adapters/http-client.js';
 import { ensureSubStoreQuickJsScriptEngineInstalled } from '../../adapters/quickjs/substore-script-engine.js';
 import { ensureSurgeGeoipInstalled } from '../surge/geoip/ensureSurgeGeoipInstalled.js';
+import {
+    createSubStoreRequestContext,
+    deleteSubStoreRequestContext,
+    flushSubStoreRequestContext,
+    installSubStoreRuntimeGlobals,
+    runWithSubStoreContext,
+} from './subStoreRequestContext.js';
 import path from 'node:path';
 import { Buffer } from 'node:buffer';
 import streamPromises from 'node:stream/promises';
@@ -65,6 +72,8 @@ function ensurePolyfills() {
             return num * (multipliers[unit] || 1);
         };
     }
+
+    installSubStoreRuntimeGlobals();
 }
 
 function setupGlobalsForSubStore(env, userSettings, ctx) {
@@ -74,7 +83,7 @@ function setupGlobalsForSubStore(env, userSettings, ctx) {
     const notification = userSettings?.notification || { type: 'none' };
 
     // Surge $notification（支持 Bark/Pushover）
-    globalThis.$notification = {
+    const notificationProxy = {
         post: (title, subtitle, content) => {
             debug(`[Notification] ${title}: ${subtitle} - ${content}`);
 
@@ -98,21 +107,13 @@ function setupGlobalsForSubStore(env, userSettings, ctx) {
         },
     };
 
-    globalThis.$environment = {
+    const environment = {
         'surge-version': userSettings?.surgeVersion || '5.0.0',
         'surge-build': userSettings?.surgeBuild || '2000',
         language: 'zh-Hans',
     };
 
-    globalThis.__env__ = env;
-    globalThis.process = {
-        env: env || {},
-        version: 'v20.0.0',
-        argv: [],
-        cwd: () => '/',
-    };
-    globalThis.__filename = '/worker.js';
-    globalThis.__dirname = '/';
+    return { notification: notificationProxy, environment };
 }
 
 async function sendBarkNotification(config, title, subtitle, content) {
@@ -205,8 +206,48 @@ function buildResponseFromSubStoreResult(result) {
     });
 }
 
+async function executeSubStoreRequest({ $request, subStoreContext, requestId, timeoutMs, timeoutLabel }) {
+    let timeoutId = null;
+    return await new Promise((resolve) => {
+        subStoreContext.done = (res) => {
+            if (timeoutId) clearTimeout(timeoutId);
+            subStoreContext.done = null;
+            resolve({ result: res, timedOut: false });
+        };
+
+        timeoutId = setTimeout(() => {
+            warn(`[SubStoreAtom] [${requestId}] ${timeoutLabel}`);
+            subStoreContext.done = null;
+            resolve({
+                result: {
+                    status: 504,
+                    body: JSON.stringify({ status: 'failed', message: 'Gateway Timeout' }),
+                    headers: { 'Content-Type': 'application/json' },
+                },
+                timedOut: true,
+            });
+        }, timeoutMs);
+
+        initSubStore($request).catch((e) => {
+            if (timeoutId) clearTimeout(timeoutId);
+            subStoreContext.done = null;
+            logError(`[SubStoreAtom] [${requestId}] initSubStore failed:`, e?.message || e);
+            resolve({ result: { status: 500, body: 'Internal Server Error' }, timedOut: false });
+        });
+    });
+}
+
+function cleanupSubStoreAttempt(attemptId) {
+    deleteSubStoreRequestContext(attemptId);
+}
+
 export async function runSubStoreHttpForUser({ user, env, state, request, subStorePath }) {
-    const ctx = { waitUntil: (p) => state.waitUntil(p) };
+    const ctx = {
+        waitUntil: (p) => {
+            if (state?.waitUntil) return state.waitUntil(p);
+            return Promise.resolve(p).catch(() => {});
+        },
+    };
     ensurePolyfills();
 
     // Install QuickJS script engine hook before Sub-Store handles user scripts.
@@ -214,12 +255,17 @@ export async function runSubStoreHttpForUser({ user, env, state, request, subSto
     ensureSubStoreQuickJsScriptEngineInstalled();
 
     const userSettings = parseUserSettings(user);
-    setupGlobalsForSubStore(env, userSettings, ctx);
+    const subStoreGlobals = setupGlobalsForSubStore(env, userSettings, ctx);
+
+    // 兼容 open-api 补丁：使用 requestId 标识本次请求的缓存槽位
+    const requestId = `${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
+    const attemptId = `${requestId}:1`;
 
     // Surge $utils.geoip/ipasn/ipaso (GeoIP) — load once per isolate, then sync lookups.
-    await ensureSurgeGeoipInstalled(env);
+    await ensureSurgeGeoipInstalled(env, { requestId: attemptId });
 
     // 初始化用户专属存储
+    let subStoreContext = null;
     const userStorage = (() => {
         const DEFAULT_KEY = '__default__';
         let userData = {};
@@ -239,8 +285,10 @@ export async function runSubStoreHttpForUser({ user, env, state, request, subSto
             write: (data, key) => {
                 const storageKey = key || DEFAULT_KEY;
                 userData[storageKey] = data;
-                globalThis.__user_data_dirty__ = true;
-                globalThis.__user_data__ = userData;
+                if (subStoreContext) {
+                    subStoreContext.dirty = true;
+                    subStoreContext.userData = userData;
+                }
                 if (storageKey === 'sub-store') {
                     debug('[Workers] 检测到备份恢复，标记需要重新初始化');
                     globalThis.__need_reinit__ = true;
@@ -250,16 +298,7 @@ export async function runSubStoreHttpForUser({ user, env, state, request, subSto
             getData: () => userData,
         };
     })();
-    globalThis.$persistentStore = userStorage;
-    globalThis.__user_data_dirty__ = false;
-    globalThis.__user_data__ = null;
 
-    // 兼容 open-api 补丁：使用 requestId 标识本次请求的缓存槽位
-    const requestId = globalThis.__current_request_id__ || `${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`;
-    globalThis.__current_request_id__ = requestId;
-    if (!globalThis.__substore_request_caches__) {
-        globalThis.__substore_request_caches__ = new Map();
-    }
     const cacheData = (() => {
         try {
             return JSON.parse(userStorage.read('sub-store') || '{}');
@@ -267,43 +306,40 @@ export async function runSubStoreHttpForUser({ user, env, state, request, subSto
             return {};
         }
     })();
-    globalThis.__substore_request_caches__.set(requestId, cacheData);
 
     // 解析为 Sub-Store 期望的 $request
     const $request = await buildSubStoreRequest(request, subStorePath);
-    debug(`[SubStoreAtom] [${requestId}] ${$request.method} ${$request.path}`);
-
-    // $done 回调（Sub-Store 会异步调用）
-    let timeoutId = null;
-    const result = await new Promise((resolve) => {
-        globalThis.$done = (res) => {
-            if (timeoutId) clearTimeout(timeoutId);
-            resolve(res);
-        };
-        timeoutId = setTimeout(() => {
-            warn(`[SubStoreAtom] [${requestId}] 请求超时`);
-            resolve({
-                status: 504,
-                body: JSON.stringify({ status: 'failed', message: 'Gateway Timeout' }),
-                headers: { 'Content-Type': 'application/json' },
-            });
-        }, 25000);
-
-        // 初始化并触发 dispatch
-        initSubStore($request).catch((e) => {
-            if (timeoutId) clearTimeout(timeoutId);
-            logError(`[SubStoreAtom] [${requestId}] initSubStore failed:`, e?.message || e);
-            resolve({ status: 500, body: 'Internal Server Error' });
-        });
+    $request.__requestId = attemptId;
+    subStoreContext = createSubStoreRequestContext({
+        requestId: attemptId,
+        request: $request,
+        user,
+        env,
+        persistentStore: userStorage,
+        notification: subStoreGlobals.notification,
+        environment: subStoreGlobals.environment,
+        cache: cacheData,
     });
 
-    // 持久化（由外部注入 __saveUserData 落库到 UserDO）
-    if (typeof env?.__saveUserData === 'function') {
-        state.waitUntil(Promise.resolve(env.__saveUserData(user?.id)));
-    }
+    const { result } = await runWithSubStoreContext(subStoreContext, async () => await executeSubStoreRequest({
+        $request,
+        subStoreContext,
+        requestId,
+        timeoutMs: 25000,
+        timeoutLabel: '请求超时',
+    }));
 
-    if (globalThis.__substore_request_caches__) {
-        globalThis.__substore_request_caches__.delete(requestId);
+    const dataString = flushSubStoreRequestContext(subStoreContext);
+
+    // 持久化（由外部注入 __saveUserData 落库到 User 域存储）
+    if (typeof env?.__saveUserData === 'function') {
+        const savePromise = Promise.resolve(env.__saveUserData(user?.id, dataString)).finally(() => {
+            cleanupSubStoreAttempt(attemptId);
+        });
+        if (state?.waitUntil) state.waitUntil(savePromise);
+        else await savePromise;
+    } else {
+        cleanupSubStoreAttempt(attemptId);
     }
 
     return buildResponseFromSubStoreResult(result);

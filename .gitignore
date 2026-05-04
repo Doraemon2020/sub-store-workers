@@ -14,6 +14,8 @@ public/dashboard/
 # QuickJS wasm files copied from node_modules
 src/adapters/quickjs/wasm/*.wasm
 src/adapters/quickjs/wasm/*.wasm.map.txt
+src/platform/workers/runtime/wasm/*.wasm
+src/platform/workers/runtime/wasm/*.wasm.map.txt
 
 # Wrangler
 .wrangler/

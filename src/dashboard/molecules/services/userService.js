@@ -1,18 +1,8 @@
 /**
  * L3 - Molecule（Service）
- * 用户：读取/写入 users 表 + 通过 userDataStore 读写 UserDO data（带内存缓存）。
+ * 用户：读取/写入 users 表 + 通过 userDataStore 读写用户 data（基础信息带内存缓存）。
  */
 
-import { getUserByUsername as getUserByUsernameSql } from '../../atoms/userSql/userSqlAtoms.js';
-import { getUserById as getUserByIdSql } from '../../atoms/userSql/userSqlAtoms.js';
-import { getUserByPath as getUserByPathSql } from '../../atoms/userSql/userSqlAtoms.js';
-import { createUser as createUserSql } from '../../atoms/userSql/userSqlAtoms.js';
-import { updateUsername as updateUsernameSql } from '../../atoms/userSql/userSqlAtoms.js';
-import { updatePath as updatePathSql } from '../../atoms/userSql/userSqlAtoms.js';
-import { updateNotes as updateNotesSql } from '../../atoms/userSql/userSqlAtoms.js';
-import { updatePasswordAndBumpTokenVersion as updatePasswordAndBumpTokenVersionSql } from '../../atoms/userSql/userSqlAtoms.js';
-import { deleteUser as deleteUserSql } from '../../atoms/userSql/userSqlAtoms.js';
-import { listUsersForAdmin as listUsersForAdminSql } from '../../atoms/userSql/userSqlAtoms.js';
 import { debug } from '../../../utils/logger.js';
 
 const USER_CACHE_TTL_MS = 10000;
@@ -32,13 +22,33 @@ function getCached(cache, key) {
 
 function setCached(cache, key, value) {
     if (!key) return;
-    cache.set(key, { value, at: Date.now() });
+    const { data: _data, ...cacheableUser } = value || {};
+    cache.set(key, { value: cacheableUser, at: Date.now() });
 }
 
 function clearUserCache() {
     userCacheById.clear();
     userCacheByPath.clear();
     userCacheByUsername.clear();
+}
+
+async function withFreshUserData(ctx, user) {
+    if (!user) return user;
+    const result = { ...user };
+    if (ctx.userDataStore && result.id) {
+        const data = await ctx.userDataStore.get(result.id);
+        if (data !== null && data !== undefined) {
+            result.data = data;
+        }
+    }
+    return result;
+}
+
+function cacheUser(user) {
+    if (!user) return;
+    setCached(userCacheByUsername, user.username, user);
+    setCached(userCacheById, user.id, user);
+    setCached(userCacheByPath, user.path, user);
 }
 
 /**
@@ -61,21 +71,13 @@ export async function getUser(ctx, username) {
     const cached = getCached(userCacheByUsername, username);
     if (cached) {
         debug('[User] cache hit: username', username);
-        return cached;
+        return await withFreshUserData(ctx, cached);
     }
-    const user = getUserByUsernameSql(ctx, username);
+    const user = await ctx.services.indexGateway.getUserByUsername(username);
     if (user) {
-        if (ctx.userDataStore && user.id) {
-            const data = await ctx.userDataStore.get(user.id);
-            if (data !== null && data !== undefined) {
-                user.data = data;
-            }
-        }
-        setCached(userCacheByUsername, username, user);
-        setCached(userCacheById, user.id, user);
-        setCached(userCacheByPath, user.path, user);
+        cacheUser(user);
     }
-    return user;
+    return await withFreshUserData(ctx, user);
 }
 
 /**
@@ -87,21 +89,13 @@ export async function getUserById(ctx, id) {
     const cached = getCached(userCacheById, id);
     if (cached) {
         debug('[User] cache hit: id', id);
-        return cached;
+        return await withFreshUserData(ctx, cached);
     }
-    const user = getUserByIdSql(ctx, id);
+    const user = await ctx.services.indexGateway.getUserById(id);
     if (user) {
-        if (ctx.userDataStore && user.id) {
-            const data = await ctx.userDataStore.get(user.id);
-            if (data !== null && data !== undefined) {
-                user.data = data;
-            }
-        }
-        setCached(userCacheById, id, user);
-        setCached(userCacheByUsername, user.username, user);
-        setCached(userCacheByPath, user.path, user);
+        cacheUser(user);
     }
-    return user;
+    return await withFreshUserData(ctx, user);
 }
 
 /**
@@ -113,21 +107,13 @@ export async function getUserByPath(ctx, path) {
     const cached = getCached(userCacheByPath, path);
     if (cached) {
         debug('[User] cache hit: path', path);
-        return cached;
+        return await withFreshUserData(ctx, cached);
     }
-    const user = getUserByPathSql(ctx, path);
+    const user = await ctx.services.indexGateway.getUserByPath(path);
     if (user) {
-        if (ctx.userDataStore && user.id) {
-            const data = await ctx.userDataStore.get(user.id);
-            if (data !== null && data !== undefined) {
-                user.data = data;
-            }
-        }
-        setCached(userCacheByPath, path, user);
-        setCached(userCacheById, user.id, user);
-        setCached(userCacheByUsername, user.username, user);
+        cacheUser(user);
     }
-    return user;
+    return await withFreshUserData(ctx, user);
 }
 
 /**
@@ -139,7 +125,7 @@ export async function getUserByPath(ctx, path) {
  */
 export async function createUser(ctx, username, passwordHash, role = 'user') {
     const path = generatePath();
-    const result = createUserSql(ctx, username, passwordHash, role, path);
+    const result = await ctx.services.indexGateway.createUser({ username, passwordHash, role, path });
     clearUserCache();
     return result;
 }
@@ -166,8 +152,7 @@ export async function updateUserData(ctx, id, data) {
  * @param {string} newUsername 
  */
 export async function updateUsername(ctx, id, newUsername) {
-    const now = Date.now();
-    const result = updateUsernameSql(ctx, id, newUsername, now);
+    const result = await ctx.services.indexGateway.updateUsername(id, newUsername);
     clearUserCache();
     return result;
 }
@@ -179,8 +164,7 @@ export async function updateUsername(ctx, id, newUsername) {
  * @param {string} newPath 
  */
 export async function updatePath(ctx, id, newPath) {
-    const now = Date.now();
-    const result = updatePathSql(ctx, id, newPath, now);
+    const result = await ctx.services.indexGateway.updatePath(id, newPath);
     clearUserCache();
     return result;
 }
@@ -190,13 +174,17 @@ export async function updatePath(ctx, id, newPath) {
  * @param {object} ctx
  */
 export async function listUsers(ctx) {
-    const results = listUsersForAdminSql(ctx);
+    const results = await ctx.services.indexGateway.listUsersForAdmin();
     const users = results.map(user => ({
         ...user,
         avatarUrl: user.avatar_url || '',
         avatar_url: undefined,
     }));
     return { results: users };
+}
+
+export async function countUsers(ctx) {
+    return await ctx.services.indexGateway.countUsers();
 }
 
 /**
@@ -208,7 +196,7 @@ export async function deleteUser(ctx, id) {
     if (ctx.userDataStore) {
         await ctx.userDataStore.delete(id);
     }
-    const result = deleteUserSql(ctx, id);
+    const result = await ctx.services.indexGateway.deleteUser(id);
     clearUserCache();
     return result;
 }
@@ -220,8 +208,7 @@ export async function deleteUser(ctx, id) {
  * @param {string} notes 
  */
 export async function updateNotes(ctx, id, notes) {
-    const now = Date.now();
-    const result = updateNotesSql(ctx, id, notes, now);
+    const result = await ctx.services.indexGateway.updateNotes(id, notes);
     clearUserCache();
     return result;
 }
@@ -234,8 +221,7 @@ export async function updateNotes(ctx, id, notes) {
  * @param {string} passwordHash 
  */
 export async function updatePassword(ctx, id, passwordHash) {
-    const now = Date.now();
-    const result = updatePasswordAndBumpTokenVersionSql(ctx, id, passwordHash, now);
+    const result = await ctx.services.indexGateway.updatePasswordAndBumpTokenVersion(id, passwordHash);
     clearUserCache();
     return result;
 }

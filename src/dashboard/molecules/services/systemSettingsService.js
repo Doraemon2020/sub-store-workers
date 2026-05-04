@@ -1,18 +1,10 @@
 /**
  * L3 - Molecule（Service）
- * 系统设置：读取/回填默认值/更新（带内存缓存）。
+ * 系统设置：读取/回填默认值/更新。
  */
 
 import { defaultSettings } from '../../settings-defaults.js';
-import { getSystemSettingsRow } from '../../atoms/settings/settingsAtoms.js';
-import { upsertSystemSettings } from '../../atoms/settings/settingsAtoms.js';
-import { debug } from '../../../utils/logger.js';
-import { parseJsonObjectOrEmpty } from '../../../atoms/json/parseJsonObjectOrEmpty.js';
 import { mergeSettingsWithDefaults } from '../../atoms/settings/settingsAtoms.js';
-
-const SETTINGS_CACHE_TTL_MS = 30000;
-let settingsCache = null;
-let settingsCacheAt = 0;
 
 /**
  * 获取系统设置
@@ -21,23 +13,9 @@ let settingsCacheAt = 0;
  * @returns {Promise<object>}
  */
 export async function getSystemSettings(ctx) {
-    if (settingsCache && Date.now() - settingsCacheAt < SETTINGS_CACHE_TTL_MS) {
-        debug('[Settings] cache hit');
-        return settingsCache;
-    }
-
-    const result = getSystemSettingsRow(ctx);
-    const dbSettings = parseJsonObjectOrEmpty(result?.settings);
-    const { merged, needsSave } = mergeSettingsWithDefaults({ defaultSettings, dbSettings });
-
-    // 如果有缺失的 key，自动保存到数据库
-    if (needsSave) {
-        await updateSystemSettings(ctx, merged);
-    }
-
-    settingsCache = merged;
-    settingsCacheAt = Date.now();
-    return merged;
+    return await ctx.services.indexGateway.getSystemSettings({
+        mergeSettings: ({ dbSettings }) => mergeSettingsWithDefaults({ defaultSettings, dbSettings }),
+    });
 }
 
 /**
@@ -57,9 +35,9 @@ export async function getSetting(ctx, key) {
  * @param {object} settings 
  */
 export async function updateSystemSettings(ctx, settings) {
-    const json = JSON.stringify(settings);
-    const now = Date.now();
-    upsertSystemSettings(ctx, json, now);
-    settingsCache = settings;
-    settingsCacheAt = Date.now();
+    await ctx.services.indexGateway.patchSystemSettings({
+        patch: settings,
+        mergeSettings: ({ dbSettings }) => mergeSettingsWithDefaults({ defaultSettings, dbSettings }),
+        mergePatch: ({ current, patch }) => ({ ...current, ...patch }),
+    });
 }
