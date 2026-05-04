@@ -97,6 +97,21 @@ jobs:
       - name: Checkout Workers Adapter Code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
       - name: Download Sub-Store Source Code
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -119,16 +134,6 @@ jobs:
           JWT_SECRET='${{ secrets.JWT_SECRET }}'
           ESCAPED_JWT_SECRET=$(printf '%s' "$JWT_SECRET" | sed -e 's/[\\/&]/\\\\&/g')
           sed -i "s|__JWT_SECRET__|$ESCAPED_JWT_SECRET|g" wrangler.toml
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: latest
 
       - name: Install backend dependencies
         working-directory: build/sub-store/backend
