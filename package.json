@@ -16,8 +16,8 @@
         "install:backend": "cd sub-store/backend && pnpm install --no-frozen-lockfile --ignore-scripts",
         "migrate:deno-pg": "deno run -A scripts/deno-postgres-migrate.mjs",
         "deploy:workers:local": "pnpm run prepare:quickjs-wasm && npx wrangler deploy",
-        "deploy:workers:action": "set -o pipefail && pnpm run prepare:quickjs-wasm && npx wrangler deploy 2>&1 | sed -e '/workers.dev/d' -e '/https:\\/\\//d'",
-        "deploy:workers:deno": "set -o pipefail && deno deploy --prod 2>&1 | grep -vEi \"https?://|url:\"",
+        "deploy:workers:action": "bash -o pipefail -c 'pnpm run prepare:quickjs-wasm && npx wrangler deploy 2>&1 | sed -e \"/workers.dev/d\" -e \"/https:\\\\/\\\\//d\"'",
+        "deploy:workers:deno": "bash -o pipefail -c 'deno deploy --prod 2>&1 | grep -vEi \"https?://|url:\"'",
         "tail": "npx wrangler tail --format=pretty"
     },
     "devDependencies": {
