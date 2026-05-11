@@ -84,7 +84,14 @@ jobs:
             --prod \
             --allow-node-modules \
             2>&1 | sed -E '/https?:\/\/[^[:space:]]*\.(deno\.net|deno\.com)/d'
-          deno deploy env add JWT_SECRET "${{ secrets.JWT_SECRET }}" --app sub-store
+
+          if deno deploy env list --app sub-store 2>/dev/null | grep -q '^JWT_SECRET\b'; then
+            echo "JWT_SECRET 已存在，更新值..."
+            deno deploy env update-value JWT_SECRET "${{ secrets.JWT_SECRET }}" --app sub-store
+          else
+            echo "JWT_SECRET 不存在，正在创建..."
+            deno deploy env add JWT_SECRET "${{ secrets.JWT_SECRET }}" --app sub-store
+          fi
 
   update-version-cache:
     needs: [check-updates, deploy-backend]
