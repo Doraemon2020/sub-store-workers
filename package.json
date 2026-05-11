@@ -9,8 +9,6 @@
         "dev:workers": "pnpm run prepare:quickjs-wasm && vite dev --config vite.workers.config.js --host 0.0.0.0 --port 3000",
         "dev:deno": "deno task dev:deno",
         "build:workers": "pnpm run prepare:quickjs-wasm && vite build --config vite.workers.config.js",
-        "check:deno-routes": "node scripts/check-deno-routes.mjs",
-        "test:deno-runtime": "node scripts/test-deno-runtime.mjs",
         "preview:workers": "pnpm run prepare:quickjs-wasm && vite preview --config vite.workers.config.js --host 0.0.0.0 --port 3000",
         "fetch:substore": "bash scripts/fetch-substore.sh && pnpm run install:backend",
         "install:backend": "cd sub-store/backend && pnpm install --no-frozen-lockfile --ignore-scripts",

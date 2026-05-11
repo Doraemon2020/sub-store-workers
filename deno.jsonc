@@ -7,15 +7,17 @@
   "tasks": {
     "build": "deno task build:deploy",
     "build:dashboard": "vite build --config vite.deno.config.js",
-    "build:deploy": "deno task fetch:substore && npm run prepare:quickjs-wasm && deno task build:dashboard && npm run build:substore-deno",
-    "build:deno": "npm run prepare:quickjs-wasm && deno task build:dashboard && npm run build:substore-deno",
+    "build:deploy": "deno task fetch:substore && deno run prepare:quickjs-wasm && deno task build:dashboard && deno run build:substore-deno",
+    "build:deno": "deno run prepare:quickjs-wasm && deno task build:dashboard && deno run build:substore-deno",
     "migrate": "deno run -A scripts/deno-postgres-migrate.mjs",
-    "dev:deno": "npm run prepare:quickjs-wasm && npm run build:substore-deno && deno run -A src/deno.js",
+    "dev:deno": "deno run prepare:quickjs-wasm && deno run build:substore-deno && deno run -A src/deno.js",
     "fetch:substore": "bash scripts/fetch-substore.sh && deno task install:backend",
     "install:backend": "cd sub-store/backend && npm install --ignore-scripts"
   },
-  "deploy": {
-    "org": "saintwe",
-    "app": "sub-store"
-  }
+  "allowScripts": [
+    "npm:esbuild@0.27.3",
+    "npm:fsevents@2.3.3",
+    "npm:sharp@0.34.5",
+    "npm:workerd@1.20260301.1"
+  ]
 }
