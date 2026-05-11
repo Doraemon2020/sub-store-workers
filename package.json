@@ -6,17 +6,17 @@
     "scripts": {
         "prepare:quickjs-wasm": "bash scripts/copy-quickjs-wasm.sh",
         "build:substore-deno": "node scripts/build-substore-deno-runtime.mjs",
-        "dev:workers": "bun run prepare:quickjs-wasm && vite dev --config vite.workers.config.js --host 0.0.0.0 --port 3000",
+        "dev:workers": "pnpm run prepare:quickjs-wasm && vite dev --config vite.workers.config.js --host 0.0.0.0 --port 3000",
         "dev:deno": "deno task dev:deno",
-        "build:workers": "bun run prepare:quickjs-wasm && vite build --config vite.workers.config.js",
+        "build:workers": "pnpm run prepare:quickjs-wasm && vite build --config vite.workers.config.js",
         "check:deno-routes": "node scripts/check-deno-routes.mjs",
         "test:deno-runtime": "node scripts/test-deno-runtime.mjs",
-        "preview:workers": "bun run prepare:quickjs-wasm && vite preview --config vite.workers.config.js --host 0.0.0.0 --port 3000",
-        "fetch:substore": "bash scripts/fetch-substore.sh && bun run install:backend",
-        "install:backend": "cd sub-store/backend && bun install --ignore-scripts",
+        "preview:workers": "pnpm run prepare:quickjs-wasm && vite preview --config vite.workers.config.js --host 0.0.0.0 --port 3000",
+        "fetch:substore": "bash scripts/fetch-substore.sh && pnpm run install:backend",
+        "install:backend": "cd sub-store/backend && pnpm install --no-frozen-lockfile --ignore-scripts",
         "migrate:deno-pg": "deno run -A scripts/deno-postgres-migrate.mjs",
-        "deploy:workers:local": "bun run prepare:quickjs-wasm && npx wrangler deploy",
-        "deploy:workers:action": "set -o pipefail && bun run prepare:quickjs-wasm && npx wrangler deploy 2>&1 | sed -e '/workers.dev/d' -e '/https:\\/\\//d'",
+        "deploy:workers:local": "pnpm run prepare:quickjs-wasm && npx wrangler deploy",
+        "deploy:workers:action": "set -o pipefail && pnpm run prepare:quickjs-wasm && npx wrangler deploy 2>&1 | sed -e '/workers.dev/d' -e '/https:\\/\\//d'",
         "deploy:workers:deno": "set -o pipefail && deno deploy --prod 2>&1 | grep -vEi \"https?://|url:\"",
         "tail": "npx wrangler tail --format=pretty"
     },
@@ -38,5 +38,12 @@
         "react": "^19.2.3",
         "react-dom": "^19.2.3",
         "react-router-dom": "^7.11.0"
+    },
+    "pnpm": {
+        "onlyBuiltDependencies": [
+            "esbuild",
+            "sharp",
+            "workerd"
+        ]
     }
 }

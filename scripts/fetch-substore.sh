@@ -48,7 +48,7 @@ require_any_cmd() {
 
 require_cmd curl
 require_cmd tar
-require_any_cmd python3 deno bun node
+require_any_cmd python3 deno node
 
 GITHUB_API_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
 
@@ -70,21 +70,17 @@ parse_json_tag_name() {
     deno eval 'const input = await new Response(Deno.stdin.readable).text(); const j = JSON.parse(input); if (!j.tag_name) throw new Error("缺少 tag_name"); await Deno.stdout.write(new TextEncoder().encode(String(j.tag_name)));'
     return
   fi
-  if command -v bun >/dev/null 2>&1; then
-    bun -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);if(!j.tag_name) throw new Error("缺少 tag_name");process.stdout.write(String(j.tag_name));}catch(e){console.error(e.message);process.exit(1);}});'
-    return
-  fi
   if command -v node >/dev/null 2>&1; then
     node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);if(!j.tag_name) throw new Error("缺少 tag_name");process.stdout.write(String(j.tag_name));}catch(e){console.error(e.message);process.exit(1);}});'
     return
   fi
-  echo "[fetch-substore] 无法解析 GitHub API JSON：缺少 python3 / deno / bun / node" >&2
+  echo "[fetch-substore] 无法解析 GitHub API JSON：缺少 python3 / deno / node" >&2
   exit 1
 }
 
 get_latest_version() {
   local api="https://api.github.com/repos/${SUBSTORE_REPO}/releases/latest"
-  # 使用 bun/node/python3 解析 JSON，并在限流时给出提示
+  # 使用 python3/deno/node 解析 JSON，并在限流时给出提示
   local headers_file body_file status
   headers_file="$(mktemp)"
   body_file="$(mktemp)"
