@@ -87,8 +87,8 @@ jobs:
           deno deploy env add JWT_SECRET "${{ secrets.JWT_SECRET }}" --app sub-store
 
   update-version-cache:
-    needs: [check-updates, deploy-deno]
-    if: always() && needs.deploy-deno.result == 'success'
+    needs: [check-updates, deploy-backend]
+    if: always() && needs.deploy-backend.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
@@ -113,7 +113,7 @@ jobs:
           key: version-cache-deno-${{ github.ref_name }}-${{ github.run_id }}
 
   summary:
-    needs: [check-updates, deploy-deno]
+    needs: [check-updates, deploy-backend]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -125,4 +125,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| 组件 | 版本 | 状态 |" >> $GITHUB_STEP_SUMMARY
           echo "|------|------|------|" >> $GITHUB_STEP_SUMMARY
-          echo "| 后端 | \`${{ needs.check-updates.outputs.backend_version }}\` | \`${{ needs.deploy-deno.result }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| 后端 | \`${{ needs.check-updates.outputs.backend_version }}\` | \`${{ needs.deploy-backend.result }}\` |" >> $GITHUB_STEP_SUMMARY
