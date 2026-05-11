@@ -20,6 +20,56 @@ export function subStoreTransformPlugin() {
     let processorsFileSeen = false;
     let openApiDebugPatchApplied = 0;
     let openApiDebugFileSeen = false;
+    let subStoreFileSeen = false;
+
+    const requiredTargetFiles = [
+        ['express.js', () => expressFileSeen, () => expressPatchApplied],
+        ['open-api.js', () => openApiFileSeen, () => openApiPatchApplied],
+        ['download.js', () => downloadFileSeen, () => downloadPatchApplied],
+        ['processors/index.js', () => processorsFileSeen, () => processorsPatchApplied],
+        ['core/app.js', () => openApiDebugFileSeen, () => openApiDebugPatchApplied],
+    ];
+
+    const dangerousRequireNames = [
+        'dotenv',
+        'fs',
+        'path',
+        'undici',
+        'fetch-socks',
+        'express',
+        'body-parser',
+        'cron',
+        'child_process',
+        'connect-history-api-fallback',
+        'http-proxy-middleware',
+        'mime-types',
+        'ms',
+        'nanoid',
+        '@maxmind/geoip2-node',
+        'stream/promises',
+    ];
+    const dangerousRequirePatterns = dangerousRequireNames.flatMap((name) => {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\//g, '\\/');
+        return [
+            new RegExp(`eval\\s*\\(\\s*['\"\`]require\\s*\\(\\s*['\"\`]${escaped}['\"\`]\\s*\\)['\"\`]\\s*,?\\s*\\)`),
+            new RegExp(`(?<!['\"\`])\\brequire\\s*\\(\\s*['\"\`]${escaped}['\"\`]\\s*\\)`),
+        ];
+    });
+
+    function replaceEvalRequire(contents, moduleName, replacement) {
+        const escaped = moduleName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\//g, '\\/');
+        return contents.replace(
+            new RegExp(`eval\\s*\\(\\s*['\"\`]require\\s*\\(\\s*['\"\`]${escaped}['\"\`]\\s*\\)['\"\`]\\s*,?\\s*\\)`, 'g'),
+            replacement,
+        );
+    }
+
+    function assertNoDangerousRequireResidue(contents, id, pluginContext) {
+        const matched = dangerousRequirePatterns.find((pattern) => pattern.test(contents));
+        if (matched) {
+            pluginContext.error(`[sub-store-transform] ${id} 仍包含未替换的危险 require/eval: ${matched}`);
+        }
+    }
 
     return {
         name: 'sub-store-transform',
@@ -28,28 +78,31 @@ export function subStoreTransformPlugin() {
             if (!id.includes('sub-store/backend/src')) {
                 return null;
             }
+            subStoreFileSeen = true;
 
             let contents = code;
 
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]dotenv['"`]\s*\)['"`]\s*\)/g, '({ config: () => {} })');
-            contents = contents.replace(/eval\s*\(\s*["'`]require\s*\(\s*['"`]fs['"`]\s*\)["'`]\s*\)/g, 'globalThis.__fs_shim__');
-            contents = contents.replace(/eval\s*\(\s*["'`]require\s*\(\s*['"`]path['"`]\s*\)["'`]\s*\)/g, 'globalThis.__path_shim__');
-            contents = contents.replace(/eval\s*\(\s*["'`]require\s*\(\s*['"`]undici['"`]\s*\)["'`]\s*\)/g, '({ request: globalThis.fetch, Agent: class {}, ProxyAgent: class {}, EnvHttpProxyAgent: class {} })');
-            contents = contents.replace(/eval\s*\(\s*["'`]require\s*\(\s*['"`]fetch-socks['"`]\s*\)["'`]\s*\)/g, '({ socksDispatcher: () => null })');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]express['"`]\s*\)['"`]\s*\)/g, 'null');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]body-parser['"`]\s*\)['"`]\s*\)/g, '({ json: () => (req, res, next) => next(), urlencoded: () => (req, res, next) => next(), raw: () => (req, res, next) => next() })');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]cron['"`]\s*\)['"`]\s*\)/g, '({ CronJob: class { constructor() {} } })');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]child_process['"`]\s*\)['"`]\s*\)/g, '({ execFile: () => {} })');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]connect-history-api-fallback['"`]\s*\)['"`]\s*\)/g, '(() => (req, res, next) => next())');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]http-proxy-middleware['"`]\s*\)['"`]\s*\)/g, '({ createProxyMiddleware: () => (req, res, next) => next() })');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]mime-types['"`]\s*\)['"`]\s*\)/g, '({ contentType: () => "text/plain" })');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]ms['"`]\s*\)['"`]\s*\)/g, 'globalThis.__ms_shim__');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]nanoid['"`]\s*\)['"`]\s*\)/g, '({ nanoid: (size = 21) => crypto.randomUUID().replace(/-/g, "").slice(0, size) })');
-            contents = contents.replace(/eval\s*\(\s*['"`]require\s*\(\s*['"`]@maxmind\/geoip2-node['"`]\s*\)['"`]\s*\)/g, '({ Reader: { openBuffer: () => ({ country: () => null, asn: () => null }) } })');
-            contents = contents.replace(/eval\s*\(\s*["'`]require\s*\(\s*['"`]stream\/promises['"`]\s*\)["'`]\s*\)/g, 'globalThis.__stream_promises_shim__');
+            contents = replaceEvalRequire(contents, 'dotenv', '({ config: () => {} })');
+            contents = replaceEvalRequire(contents, 'fs', 'globalThis.__fs_shim__');
+            contents = replaceEvalRequire(contents, 'path', 'globalThis.__path_shim__');
+            contents = replaceEvalRequire(contents, 'undici', '({ request: globalThis.fetch, Agent: class {}, ProxyAgent: class {}, EnvHttpProxyAgent: class {} })');
+            contents = replaceEvalRequire(contents, 'fetch-socks', '({ socksDispatcher: () => null })');
+            contents = replaceEvalRequire(contents, 'express', 'null');
+            contents = replaceEvalRequire(contents, 'body-parser', '({ json: () => (req, res, next) => next(), urlencoded: () => (req, res, next) => next(), raw: () => (req, res, next) => next() })');
+            contents = replaceEvalRequire(contents, 'cron', '({ CronJob: class { constructor() {} } })');
+            contents = replaceEvalRequire(contents, 'child_process', '({ execFile: () => {} })');
+            contents = replaceEvalRequire(contents, 'connect-history-api-fallback', '(() => (req, res, next) => next())');
+            contents = replaceEvalRequire(contents, 'http-proxy-middleware', '({ createProxyMiddleware: () => (req, res, next) => next() })');
+            contents = replaceEvalRequire(contents, 'mime-types', '({ contentType: () => "text/plain" })');
+            contents = replaceEvalRequire(contents, 'ms', 'globalThis.__ms_shim__');
+            contents = replaceEvalRequire(contents, 'nanoid', '({ nanoid: (size = 21) => crypto.randomUUID().replace(/-/g, "").slice(0, size) })');
+            contents = replaceEvalRequire(contents, '@maxmind/geoip2-node', '({ Reader: { openBuffer: () => ({ country: () => null, asn: () => null }) } })');
+            contents = replaceEvalRequire(contents, 'stream/promises', 'globalThis.__stream_promises_shim__');
 
             contents = contents.replace(/const\s+isNode\s*=\s*eval\s*\(\s*`typeof\s+process\s*!==\s*"undefined"`\s*\)/g, 'const isNode = false');
             contents = contents.replace(/const\s+isSurge\s*=\s*typeof\s+\$httpClient\s*!==\s*['"]undefined['"]\s*&&\s*!isLoon\s*;/g, 'const isSurge = true;');
+
+            assertNoDangerousRequireResidue(contents, id, this);
 
             if (id.includes('vendor/express.js')) {
                 expressFileSeen = true;
@@ -86,6 +139,10 @@ function __emitDone__(requestId, response) {
                         'const res = Response(req.__requestId);',
                     );
                     contents = contents.replace(
+                        /dispatch\s*\(\s*method\s*,\s*url\s*,\s*i\s*\)\s*;/g,
+                        'dispatch(request, i + 1);',
+                    );
+                    contents = contents.replace(
                         'function Response() {',
                         'function Response(requestId) {',
                     );
@@ -116,6 +173,9 @@ function __emitDone__(requestId, response) {
                     }
                     if (!contents.includes('__SUB_STORE_WORKERS_PATCH__REQUEST_DONE_DISPATCH__')) {
                         this.error('[sub-store-transform] express.js 请求级 done 补丁自检失败：缺少 marker');
+                    }
+                    if (!contents.includes('dispatch(request, i + 1);')) {
+                        this.error('[sub-store-transform] express.js next() 补丁自检失败：仍可能把 method/url 当作 request 重新分发');
                     }
                 } else {
                     this.error('[sub-store-transform] express.js 补丁未应用：未命中 app.start/dispatch($request) 片段');
@@ -348,12 +408,14 @@ const tasks = {
         },
 
         buildEnd() {
-            if (!downloadFileSeen) return;
-            if (downloadPatchApplied !== 1) this.error(`[sub-store-transform] download.js in-flight 补丁未正确应用：期望 1 次，实际 ${downloadPatchApplied} 次`);
-            if (expressFileSeen && expressPatchApplied !== 1) this.error(`[sub-store-transform] express.js 补丁未正确应用：期望 1 次，实际 ${expressPatchApplied} 次`);
-            if (openApiFileSeen && openApiPatchApplied !== 1) this.error(`[sub-store-transform] open-api.js 补丁未正确应用：期望 1 次，实际 ${openApiPatchApplied} 次`);
-            if (processorsFileSeen && processorsPatchApplied !== 1) this.error(`[sub-store-transform] processors/index.js 补丁未正确应用：期望 1 次，实际 ${processorsPatchApplied} 次`);
-            if (openApiDebugFileSeen && openApiDebugPatchApplied !== 1) this.error(`[sub-store-transform] core/app.js OpenAPI debug 补丁未正确应用：期望 1 次，实际 ${openApiDebugPatchApplied} 次`);
+            if (!subStoreFileSeen) return;
+            for (const [name, seen] of requiredTargetFiles) {
+                if (!seen()) this.error(`[sub-store-transform] 必需补丁目标未进入构建图：${name}`);
+            }
+            for (const [name, _seen, applied] of requiredTargetFiles) {
+                const count = applied();
+                if (count !== 1) this.error(`[sub-store-transform] ${name} 补丁未正确应用：期望 1 次，实际 ${count} 次`);
+            }
         },
     };
 }
