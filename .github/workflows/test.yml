@@ -1,6 +1,13 @@
 name: API Smoke Test
 
 on:
+  push:
+    paths-ignore:
+      - 'README.md'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'docs/**'
+      - '*.md'
   pull_request:
     paths-ignore:
       - 'README.md'
