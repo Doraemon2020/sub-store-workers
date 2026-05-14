@@ -51,16 +51,7 @@ jobs:
           echo "DEV_PID=$!" >> "$GITHUB_ENV"
 
       - name: Wait for server
-        run: |
-          for i in $(seq 1 60); do
-            if curl -sf http://localhost:3000/api/dashboard/settings/public > /dev/null 2>&1; then
-              echo "服务器就绪 (${i}s)"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "::error::服务器未在 120s 内就绪"
-          exit 1
+        run: npx wait-on http://localhost:3000/api/dashboard/settings/public -t 120000
 
       - name: Run API tests
         run: node scripts/test-dashboard.js http://localhost:3000
@@ -74,10 +65,12 @@ jobs:
   test-deno:
     runs-on: ubuntu-latest
     name: Deno API Test
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -119,13 +112,10 @@ jobs:
         run: deno task build:dashboard
 
       - name: Run database migration
-        env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: deno task migrate
 
       - name: Start Deno server
         env:
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
           PORT: '8000'
           JWT_SECRET: test-jwt-secret-for-ci-testing-32chars
         run: |
@@ -133,16 +123,7 @@ jobs:
           echo "DEV_PID=$!" >> "$GITHUB_ENV"
 
       - name: Wait for server
-        run: |
-          for i in $(seq 1 60); do
-            if curl -sf http://localhost:8000/api/dashboard/settings/public > /dev/null 2>&1; then
-              echo "服务器就绪 (${i}s)"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "::error::Deno 服务器未在 120s 内就绪"
-          exit 1
+        run: npx wait-on http://localhost:8000/api/dashboard/settings/public -t 120000
 
       - name: Run API tests
         run: node scripts/test-dashboard.js http://localhost:8000
