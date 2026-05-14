@@ -4,7 +4,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
     SUB_STORE_PATH,
-    FASTEST_TEXT_ENCODER_DECODER_PATH,
     subStoreTransformPlugin,
 } from './vite.substore-transform.js';
 
@@ -14,7 +13,6 @@ export function createSharedResolveConfig() {
     return {
         alias: {
             '@': path.join(SUB_STORE_PATH, 'src'),
-            'fastestsmallesttextencoderdecoder': FASTEST_TEXT_ENCODER_DECODER_PATH,
         },
     };
 }
@@ -34,5 +32,6 @@ export function createDashboardBuildParts() {
         input: {
             dashboard: path.join(__dirname, 'dashboard/index.html'),
         },
+        external: ['net'],
     };
 }

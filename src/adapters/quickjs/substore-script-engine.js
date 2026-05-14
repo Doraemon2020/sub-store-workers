@@ -512,13 +512,14 @@ async function runScriptOnce({
     const yamlProxy = mkProxy('ProxyUtils.yaml');
     const b64dProxy = mkProxy('ProxyUtils.Base64.decode');
     const b64eProxy = mkProxy('ProxyUtils.Base64.encode');
+    const domainResolversProxy = mkProxy('DOMAIN_RESOLVERS');
     const cacheProxy = mkProxy('scriptResourceCache');
     const flowUtilsProxy = mkProxy('flowUtils');
     const produceArtifactProxy = mkProxy('produceArtifact');
 
     // Wrapper that emulates upstream new Function signature
     const wrapperSource = `
-(function($arguments,$options,$substore,lodash,ProxyUtils,yaml,Buffer,b64d,b64e,scriptResourceCache,flowUtils,produceArtifact,require){
+(function($arguments,$options,$substore,lodash,ProxyUtils,yaml,Buffer,b64d,b64e,DOMAIN_RESOLVERS,scriptResourceCache,flowUtils,produceArtifact,require){
 ${script}\n
 return ${name};
 })
@@ -547,6 +548,7 @@ return ${name};
             BufferPolyfill,
             b64dProxy,
             b64eProxy,
+            domainResolversProxy,
             cacheProxy,
             flowUtilsProxy,
             produceArtifactProxy,
@@ -632,6 +634,7 @@ return ${name};
         yamlProxy.dispose();
         b64dProxy.dispose();
         b64eProxy.dispose();
+        domainResolversProxy.dispose();
         cacheProxy.dispose();
         flowUtilsProxy.dispose();
         produceArtifactProxy.dispose();
@@ -663,6 +666,7 @@ export function ensureSubStoreQuickJsScriptEngineInstalled({
         $substore,
         lodash,
         ProxyUtils,
+        DOMAIN_RESOLVERS,
         scriptResourceCache,
         flowUtils,
         produceArtifact,
@@ -689,6 +693,7 @@ export function ensureSubStoreQuickJsScriptEngineInstalled({
             surgeUtils: globalThis.$utils,
             lodash,
             ProxyUtils,
+            DOMAIN_RESOLVERS,
             scriptResourceCache,
             flowUtils,
             // function

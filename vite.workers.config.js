@@ -23,6 +23,7 @@ export default defineConfig({
                 assetsDir: dashboard.assetsDir,
                 rollupOptions: {
                     input: dashboard.input,
+                    external: dashboard.external,
                 },
             },
         },

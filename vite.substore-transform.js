@@ -1,13 +1,10 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import peggy from 'peggy';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const SUB_STORE_PATH = path.join(__dirname, 'sub-store/backend');
-export const FASTEST_TEXT_ENCODER_DECODER_PATH = path.join(
-    SUB_STORE_PATH,
-    'node_modules/fastestsmallesttextencoderdecoder/NodeJS/EncoderAndDecoderNodeJS.min.mjs',
-);
 
 export function subStoreTransformPlugin() {
     let expressPatchApplied = 0;
@@ -58,7 +55,6 @@ export function subStoreTransformPlugin() {
             new RegExp(`(?<!['\"\`])\\brequire\\s*\\(\\s*['\"\`]${escaped}['\"\`]\\s*\\)`),
         ];
     });
-
     function replaceEvalRequire(contents, moduleName, replacement) {
         const escaped = moduleName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\//g, '\\/');
         return contents.replace(
@@ -72,6 +68,30 @@ export function subStoreTransformPlugin() {
         if (matched) {
             pluginContext.error(`[sub-store-transform] ${id} 仍包含未替换的危险 require/eval: ${matched}`);
         }
+    }
+
+    function precompilePeggyParser(contents, id, pluginContext) {
+        const match = /const\s+grammars\s*=\s*String\.raw`([\s\S]*?)`;/.exec(contents);
+        if (!match) {
+            pluginContext.error(`[sub-store-transform] ${id} Peggy parser 预编译失败：未找到 grammars`);
+        }
+
+        const parserSource = peggy.generate(match[1], {
+            output: 'source',
+            format: 'bare',
+        });
+
+        const output = `// __SUB_STORE_WORKERS_PATCH__PEGGY_PRECOMPILED_PARSER__
+const parser = ${parserSource};
+
+export default function getParser() {
+    return parser;
+}
+`;
+        if (output.includes('peggy.generate')) {
+            pluginContext.error(`[sub-store-transform] ${id} Peggy parser 预编译失败：仍包含 peggy.generate`);
+        }
+        return output;
     }
 
     return {
@@ -106,6 +126,10 @@ export function subStoreTransformPlugin() {
             contents = contents.replace(/const\s+isSurge\s*=\s*typeof\s+\$httpClient\s*!==\s*['"]undefined['"]\s*&&\s*!isLoon\s*;/g, 'const isSurge = true;');
 
             assertNoDangerousRequireResidue(contents, id, this);
+
+            if (id.includes('sub-store/backend/src/core/proxy-utils/parsers/peggy/')) {
+                contents = precompilePeggyParser(contents, id, this);
+            }
 
             if (id.includes('vendor/express.js')) {
                 expressFileSeen = true;
@@ -374,6 +398,7 @@ const tasks = {
         $substore: $,
         lodash,
         ProxyUtils,
+        DOMAIN_RESOLVERS,
         scriptResourceCache,
         flowUtils,
         produceArtifact,
