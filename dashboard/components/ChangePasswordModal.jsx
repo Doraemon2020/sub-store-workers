@@ -1,6 +1,7 @@
 import { useState } from 'react';
+import { api } from '../api';
 
-const ChangePasswordModal = ({ userId, token, isAdmin, minLength = 8, onClose }) => {
+const ChangePasswordModal = ({ userId, isAdmin, minLength = 8, onClose }) => {
     const [newPassword, setNewPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -22,15 +23,11 @@ const ChangePasswordModal = ({ userId, token, isAdmin, minLength = 8, onClose })
             : `/api/dashboard/user/password`;
 
         try {
-            const res = await fetch(url, {
+            const { ok } = await api(url, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ newPassword })
+                body: { newPassword }
             });
-            if (res.ok) {
+            if (ok) {
                 onClose(true);
             } else {
                 setError('修改失败，请重试');

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useToast } from './Toast';
+import { api } from '../api';
 
-const EditUserModal = ({ user, token, baseUrl, onClose, onSuccess, onRefresh }) => {
+const EditUserModal = ({ user, baseUrl, onClose, onSuccess, onRefresh }) => {
     const [username, setUsername] = useState(user.username);
     const [saving, setSaving] = useState(false);
     const [regenerating, setRegenerating] = useState(false);
@@ -16,13 +17,11 @@ const EditUserModal = ({ user, token, baseUrl, onClose, onSuccess, onRefresh }) 
         if (username !== user.username) {
             setSaving(true);
             try {
-                const res = await fetch(`/api/dashboard/admin/user/${user.id}/username`, {
+                const { ok, data } = await api(`/api/dashboard/admin/user/${user.id}/username`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                    body: JSON.stringify({ newUsername: username })
+                    body: { newUsername: username }
                 });
-                if (!res.ok) {
-                    const data = await res.json();
+                if (!ok) {
                     toast.error(data.error || '保存失败');
                     setSaving(false);
                     return;
@@ -43,12 +42,8 @@ const EditUserModal = ({ user, token, baseUrl, onClose, onSuccess, onRefresh }) 
         setRegenerating(true);
         try {
             // 调用后端生成新路径
-            const res = await fetch(`/api/dashboard/admin/user/${user.id}/regenerate-path`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
+            const { ok, data } = await api(`/api/dashboard/admin/user/${user.id}/regenerate-path`, { method: 'POST' });
+            if (ok) {
                 setCurrentPath(data.path);
                 toast.success('路径已重新生成！');
             } else {
@@ -64,12 +59,11 @@ const EditUserModal = ({ user, token, baseUrl, onClose, onSuccess, onRefresh }) 
     const handleSavePath = async () => {
         if (!confirm('确定要保存新路径吗？旧路径将失效。')) return;
         try {
-            const res = await fetch(`/api/dashboard/admin/user/${user.id}/path`, {
+            const { ok } = await api(`/api/dashboard/admin/user/${user.id}/path`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ newPath: currentPath })
+                body: { newPath: currentPath }
             });
-            if (res.ok) {
+            if (ok) {
                 toast.success('路径已保存！');
             } else {
                 toast.error('保存失败');
@@ -82,12 +76,11 @@ const EditUserModal = ({ user, token, baseUrl, onClose, onSuccess, onRefresh }) 
     const handleSaveNotes = async () => {
         setSavingNotes(true);
         try {
-            const res = await fetch(`/api/dashboard/admin/user/${user.id}/notes`, {
+            const { ok } = await api(`/api/dashboard/admin/user/${user.id}/notes`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ notes })
+                body: { notes }
             });
-            if (res.ok) {
+            if (ok) {
                 toast.success('备注已保存！');
                 onRefresh?.();
             } else {
@@ -104,12 +97,11 @@ const EditUserModal = ({ user, token, baseUrl, onClose, onSuccess, onRefresh }) 
         if (!newPassword) return;
         setResettingPassword(true);
         try {
-            const res = await fetch(`/api/dashboard/admin/user/${user.id}/password`, {
+            const { ok } = await api(`/api/dashboard/admin/user/${user.id}/password`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ newPassword })
+                body: { newPassword }
             });
-            if (res.ok) {
+            if (ok) {
                 toast.success('密码已重置！');
                 setNewPassword('');
             } else {

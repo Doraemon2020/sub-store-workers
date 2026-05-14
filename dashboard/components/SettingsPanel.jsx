@@ -1,7 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useToast } from './Toast';
+import { api } from '../api';
+import { NOTIFICATION_CHANNELS } from '../constants/notificationChannels';
 
-const SettingsPanel = ({ token, expanded, onToggle, userPath, onPathChange }) => {
+const CHANNEL_DEFAULTS = Object.fromEntries(NOTIFICATION_CHANNELS.map(ch => [ch.type, Object.fromEntries(ch.fields.map(f => [f.key, '']))]));
+
+const TestButton = ({ testing, testResult, onTest }) => (
+    <button onClick={onTest} disabled={testing}
+        className="w-full py-2 mt-2 rounded-lg text-sm bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white transition-colors">
+        {testing ? '测试中...' : testResult?.ok ? '✅ 测试通过' : '📤 测试推送'}
+    </button>
+);
+
+const SettingsPanel = ({ expanded, onToggle, userPath, onPathChange }) => {
     const toast = useToast();
     const [settings, setSettings] = useState({
         surgeVersion: '5.0.0',
@@ -9,12 +20,13 @@ const SettingsPanel = ({ token, expanded, onToggle, userPath, onPathChange }) =>
         cronEnabled: true,
         notification: {
             type: 'none',
-            bark: { serverUrl: 'https://api.day.app', deviceKey: '', group: 'SubStore' },
-            pushover: { userKey: '', appToken: '' }
+            ...CHANNEL_DEFAULTS
         }
     });
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [testing, setTesting] = useState(false);
+    const [testResult, setTestResult] = useState(null);
     const [regenerating, setRegenerating] = useState(false);
     const [message, setMessage] = useState('');
 
@@ -25,24 +37,43 @@ const SettingsPanel = ({ token, expanded, onToggle, userPath, onPathChange }) =>
     const loadSettings = async () => {
         setLoading(true);
         try {
-            const res = await fetch('/api/dashboard/user/settings', {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            if (res.ok) setSettings(await res.json());
+            const { ok, data } = await api('/api/dashboard/user/settings');
+            if (ok) setSettings(data);
         } catch (e) { }
         finally { setLoading(false); }
     };
 
+    const testNotification = async () => {
+        setTesting(true);
+        setTestResult(null);
+        const { ok, data } = await api('/api/dashboard/user/notification/test', {
+            method: 'POST',
+            body: settings.notification,
+        });
+        if (ok) {
+            setTestResult({ ok: true });
+            toast.success('测试推送发送成功！');
+        } else {
+            setTestResult({ ok: false, error: data.error || '' });
+            toast.error('推送测试失败: ' + (data.error || ''));
+        }
+        setTesting(false);
+    };
+
     const saveSettings = async () => {
+        const notif = settings.notification;
+        if (notif.type !== 'none' && !testResult?.ok) {
+            toast.warning('请先测试推送通道再保存');
+            return;
+        }
         setSaving(true);
         setMessage('');
         try {
-            const res = await fetch('/api/dashboard/user/settings', {
+            const { ok } = await api('/api/dashboard/user/settings', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify(settings)
+                body: settings
             });
-            setMessage(res.ok ? '✓ 设置已保存' : '保存失败');
+            setMessage(ok ? '✓ 设置已保存' : '保存失败');
             setTimeout(() => setMessage(''), 3000);
         } catch (e) { setMessage('保存失败'); }
         finally { setSaving(false); }
@@ -53,12 +84,8 @@ const SettingsPanel = ({ token, expanded, onToggle, userPath, onPathChange }) =>
 
         setRegenerating(true);
         try {
-            const res = await fetch('/api/dashboard/user/regenerate-path', {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const data = await res.json();
-            if (res.ok && data.path) {
+            const { ok, data } = await api('/api/dashboard/user/regenerate-path', { method: 'POST' });
+            if (ok && data.path) {
                 onPathChange(data.path);
                 setMessage('✓ 路径已重新生成');
                 setTimeout(() => setMessage(''), 3000);
@@ -79,6 +106,7 @@ const SettingsPanel = ({ token, expanded, onToggle, userPath, onPathChange }) =>
             obj[keys[keys.length - 1]] = value;
             return copy;
         });
+        if (path.startsWith('notification.')) setTestResult(null);
     };
 
     return (
@@ -148,47 +176,40 @@ const SettingsPanel = ({ token, expanded, onToggle, userPath, onPathChange }) =>
                                     通知推送
                                 </h3>
                                 <p className="text-gray-500 text-xs">脚本产生的通知将推送到你的设备</p>
-                                <div className="flex gap-2">
-                                    {[{ value: 'none', label: '不推送' }, { value: 'bark', label: 'Bark' }, { value: 'pushover', label: 'Pushover' }].map(opt => (
-                                        <button key={opt.value} onClick={() => updateField('notification.type', opt.value)}
-                                            className={`px-4 py-2 rounded-lg text-sm transition-all ${settings.notification.type === opt.value ? 'bg-gradient-to-r from-cyan-500 to-purple-600 text-white' : 'bg-slate-700/50 text-gray-400 hover:bg-slate-600/50'}`}>
-                                            {opt.label}
-                                        </button>
-                                    ))}
+                                <div>
+                                    <label className="block text-xs text-gray-500 mb-1">推送通道</label>
+                                    <div className="relative">
+                                        <select value={settings.notification.type} onChange={e => updateField('notification.type', e.target.value)}
+                                            className="w-full px-4 py-3 bg-slate-800/80 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50 appearance-none cursor-pointer">
+                                            {[
+                                                { value: 'none', label: '不推送' },
+                                                ...NOTIFICATION_CHANNELS.map(ch => ({ value: ch.type, label: ch.label })),
+                                            ].map(opt => (
+                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                            ))}
+                                        </select>
+                                        <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </div>
                                 </div>
 
-                                {settings.notification.type === 'bark' && (
+                                {settings.notification.type !== 'none' && (
                                     <div className="space-y-3 p-4 bg-slate-800/50 rounded-xl">
-                                        <div>
-                                            <label className="block text-xs text-gray-500 mb-1">服务器地址</label>
-                                            <input type="text" value={settings.notification.bark.serverUrl} onChange={e => updateField('notification.bark.serverUrl', e.target.value)}
-                                                className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50" placeholder="https://api.day.app" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-gray-500 mb-1">Device Key</label>
-                                            <input type="text" value={settings.notification.bark.deviceKey} onChange={e => updateField('notification.bark.deviceKey', e.target.value)}
-                                                className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50" placeholder="你的 Bark Key" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-gray-500 mb-1">分组名称</label>
-                                            <input type="text" value={settings.notification.bark.group || 'SubStore'} onChange={e => updateField('notification.bark.group', e.target.value)}
-                                                className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50" placeholder="SubStore" />
-                                        </div>
-                                    </div>
-                                )}
-
-                                {settings.notification.type === 'pushover' && (
-                                    <div className="space-y-3 p-4 bg-slate-800/50 rounded-xl">
-                                        <div>
-                                            <label className="block text-xs text-gray-500 mb-1">User Key</label>
-                                            <input type="text" value={settings.notification.pushover.userKey} onChange={e => updateField('notification.pushover.userKey', e.target.value)}
-                                                className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50" placeholder="你的 User Key" />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs text-gray-500 mb-1">App Token</label>
-                                            <input type="text" value={settings.notification.pushover.appToken} onChange={e => updateField('notification.pushover.appToken', e.target.value)}
-                                                className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50" placeholder="你的 App Token" />
-                                        </div>
+                                        {NOTIFICATION_CHANNELS.filter(ch => ch.type === settings.notification.type).map(ch => (
+                                            <Fragment key={ch.type}>
+                                                {ch.fields.map(field => (
+                                                    <div key={field.key}>
+                                                        <label className="block text-xs text-gray-500 mb-1">{field.label}</label>
+                                                        <input type="text" value={settings.notification[ch.type]?.[field.key] || ''}
+                                                            onChange={e => updateField(`notification.${ch.type}.${field.key}`, e.target.value)}
+                                                            className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                                            placeholder={field.placeholder} />
+                                                    </div>
+                                                ))}
+                                            </Fragment>
+                                        ))}
+                                        <TestButton testing={testing} testResult={testResult} onTest={testNotification} />
                                     </div>
                                 )}
                             </div>

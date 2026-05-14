@@ -7,6 +7,7 @@
  * - 为避免混层，已不再依赖 `src/core/substore.js`。
  */
 
+import { createNotificationGateway } from '../../orchestration/diplomat/notificationGateway.js';
 import { initSubStore } from '../../core/substore-loader.js';
 import { debug, warn, error as logError } from '../../utils/logger.js';
 import { createHttpClient } from '../../adapters/http-client.js';
@@ -83,25 +84,7 @@ function ensurePolyfills() {
 function setupGlobalsForSubStore(env, userSettings) {
     globalThis.$httpClient = createHttpClient();
 
-    const notification = userSettings?.notification || { type: 'none' };
-    const notificationProxy = {
-        post: (title, subtitle, content) => {
-            debug(`[Notification] ${title}: ${subtitle} - ${content}`);
-
-            const sendNotification = async () => {
-                try {
-                    if (notification.type === 'bark' && notification.bark?.deviceKey) {
-                        await sendBarkNotification(notification.bark, title, subtitle, content);
-                    } else if (notification.type === 'pushover' && notification.pushover?.userKey) {
-                        await sendPushoverNotification(notification.pushover, title, subtitle, content);
-                    }
-                } catch (e) {
-                    logError('[Notification] 推送失败:', e?.stack || e?.message || e);
-                }
-            };
-            sendNotification();
-        },
-    };
+    const notificationProxy = createNotificationGateway(userSettings);
 
     const environment = {
         'surge-version': userSettings?.surgeVersion || '5.0.0',
@@ -109,44 +92,6 @@ function setupGlobalsForSubStore(env, userSettings) {
         language: 'zh-Hans',
     };
     return { notification: notificationProxy, environment };
-}
-
-async function sendBarkNotification(config, title, subtitle, content) {
-    const { serverUrl, deviceKey, group } = config;
-    if (!serverUrl || !deviceKey) return;
-
-    const fullTitle = subtitle ? `${title} - ${subtitle}` : title;
-    const baseUrl = serverUrl.replace(/\/$/, '');
-    const params = new URLSearchParams({
-        group: group || 'SubStore',
-        autoCopy: '1',
-        isArchive: '1',
-        sound: 'shake',
-        level: 'timeSensitive',
-        icon: 'https://raw.githubusercontent.com/58xinian/icon/master/Sub-Store1.png',
-    });
-
-    const url = `${baseUrl}/${encodeURIComponent(deviceKey)}/${encodeURIComponent(fullTitle)}/${encodeURIComponent(content)}?${params.toString()}`;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Bark 推送失败: ${res.status}`);
-}
-
-async function sendPushoverNotification(config, title, subtitle, content) {
-    const { userKey, appToken } = config;
-    if (!userKey || !appToken) return;
-
-    const fullTitle = subtitle ? `${title} - ${subtitle}` : title;
-    const res = await fetch('https://api.pushover.net/1/messages.json', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            token: appToken,
-            user: userKey,
-            title: fullTitle,
-            message: content,
-        }),
-    });
-    if (!res.ok) throw new Error(`Pushover 推送失败: ${res.status}`);
 }
 
 export async function runSubStoreCronForUser({ user, env }) {

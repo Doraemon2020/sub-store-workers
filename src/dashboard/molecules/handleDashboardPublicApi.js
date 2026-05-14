@@ -85,8 +85,7 @@ export async function handleDashboardPublicApi({ request, env, io, services: _se
             return errorResponse('用户名或密码错误', 401);
         }
 
-        const mustChangePassword = user.username === 'admin'
-            && await verifyPassword('admin', user.password_hash);
+        const mustChangePassword = await verifyPassword('admin', user.password_hash);
 
         const expiryHours = settings?.tokenExpiryHours
             ? parseInt(settings.tokenExpiryHours, 10)

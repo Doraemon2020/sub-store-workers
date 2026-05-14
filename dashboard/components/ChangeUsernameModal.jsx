@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useToast } from './Toast';
+import { api } from '../api';
 
-const ChangeUsernameModal = ({ token, currentUsername, onClose, onSuccess }) => {
+const ChangeUsernameModal = ({ currentUsername, onClose, onSuccess }) => {
     const [username, setUsername] = useState(currentUsername || '');
     const [saving, setSaving] = useState(false);
     const toast = useToast();
@@ -17,15 +18,13 @@ const ChangeUsernameModal = ({ token, currentUsername, onClose, onSuccess }) => 
         }
         setSaving(true);
         try {
-            const res = await fetch('/api/dashboard/user/username', {
+            const { ok, data } = await api('/api/dashboard/user/username', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ newUsername: username })
+                body: { newUsername: username }
             });
-            if (res.ok) {
+            if (ok) {
                 onSuccess(username);
             } else {
-                const data = await res.json();
                 toast.error(data.error || '修改失败');
             }
         } catch (e) {

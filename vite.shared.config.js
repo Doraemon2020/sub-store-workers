@@ -1,4 +1,5 @@
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -21,6 +22,7 @@ export function createSharedResolveConfig() {
 export function createDashboardBuildParts() {
     return {
         plugins: [
+            tailwindcss(),
             react(),
             subStoreTransformPlugin(),
         ],

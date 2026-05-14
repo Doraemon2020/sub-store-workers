@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useImpersonate } from '../contexts/ImpersonateContext';
 import { useToast } from './Toast';
+import { api } from '../api';
 import ChangePasswordModal from './ChangePasswordModal';
 import EditUserModal from './EditUserModal';
 import ChangeUsernameModal from './ChangeUsernameModal';
 import Footer from './Footer';
 
 const AdminDashboard = () => {
-    const { token, frontendUrl, logout, mustChangePassword, setMustChangePassword } = useAuth();
+    const { frontendUrl, logout, mustChangePassword, setMustChangePassword } = useAuth();
     const { switchToOwnPanel, impersonate } = useImpersonate();
     const toast = useToast();
 
@@ -29,12 +30,11 @@ const AdminDashboard = () => {
     const [passwordMinLength, setPasswordMinLength] = useState(8);
     const [deletingUser, setDeletingUser] = useState(null); // { id, username }
 
-    const refresh = () => fetch('/api/dashboard/admin/users', { headers: { 'Authorization': `Bearer ${token}` } })
-        .then(async res => {
-            if (!res.ok) {
+    const refresh = () => api('/api/dashboard/admin/users')
+        .then(async ({ ok, data }) => {
+            if (!ok) {
                 throw new Error('加载用户失败');
             }
-            const data = await res.json();
             return Array.isArray(data) ? data : [];
         })
         .then(setUsers)
@@ -46,20 +46,18 @@ const AdminDashboard = () => {
     useEffect(() => {
         refresh();
         // 获取管理员信息
-        fetch('/api/dashboard/user/me', { headers: { 'Authorization': `Bearer ${token}` } })
-            .then(res => res.json())
-            .then(d => {
+        api('/api/dashboard/user/me')
+            .then(({ data: d }) => {
                 setCurrentUsername(d?.username || '');
                 setAvatarUrl(d?.avatarUrl || '');
             });
         // 获取系统设置
-        fetch('/api/dashboard/admin/settings', { headers: { 'Authorization': `Bearer ${token}` } })
-            .then(res => res.json())
-            .then(s => {
+        api('/api/dashboard/admin/settings')
+            .then(({ data: s }) => {
                 setShowUserPath(s?.showUserPath !== false);
                 setPasswordMinLength(s?.passwordMinLength ?? 8);
             });
-    }, [token]);
+    }, []);
 
     useEffect(() => {
         if (mustChangePassword) {
@@ -74,13 +72,11 @@ const AdminDashboard = () => {
         }
         setCreating(true);
         try {
-            const res = await fetch('/api/dashboard/admin/user/create', {
+            const { ok, data } = await api('/api/dashboard/admin/user/create', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ username: newUser, password: newPwd, role: 'user' })
+                body: { username: newUser, password: newPwd, role: 'user' }
             });
-            const data = await res.json();
-            if (res.ok) {
+            if (ok) {
                 toast.success(`用户 ${newUser} 创建成功！`);
                 setNewUser('');
                 setNewPwd('');
@@ -105,19 +101,13 @@ const AdminDashboard = () => {
 
     const confirmDelete = async () => {
         if (!deletingUser) return;
-        await fetch(`/api/dashboard/admin/user/${deletingUser.id}`, {
-            method: 'DELETE',
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
+        await api(`/api/dashboard/admin/user/${deletingUser.id}`, { method: 'DELETE' });
         setDeletingUser(null);
         refresh();
     };
 
     const handleEdit = async (id) => {
-        const res = await fetch(`/api/dashboard/admin/user/${id}`, {
-            headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const d = await res.json();
+        const { data: d } = await api(`/api/dashboard/admin/user/${id}`);
         setEditingUser({ id, username: d.username, path: d.path, notes: d.notes || '', dataStr: d.data || '{}' });
     };
 
@@ -380,7 +370,6 @@ const AdminDashboard = () => {
             {editingUser && (
                 <EditUserModal
                     user={editingUser}
-                    token={token}
                     baseUrl={baseUrl}
                     onClose={() => setEditingUser(null)}
                     onSuccess={() => { setEditingUser(null); refresh(); }}
@@ -391,7 +380,6 @@ const AdminDashboard = () => {
             {resettingUser && (
                 <ChangePasswordModal
                     userId={resettingUser}
-                    token={token}
                     isAdmin={true}
                     minLength={passwordMinLength}
                     onClose={handlePwdModalClose}
@@ -400,7 +388,6 @@ const AdminDashboard = () => {
 
             {showPwdModal && (
                 <ChangePasswordModal
-                    token={token}
                     isAdmin={false}
                     minLength={passwordMinLength}
                     onClose={(success) => {
@@ -416,7 +403,6 @@ const AdminDashboard = () => {
 
             {showUsernameModal && (
                 <ChangeUsernameModal
-                    token={token}
                     currentUsername={currentUsername}
                     onClose={() => setShowUsernameModal(false)}
                     onSuccess={(newName) => {

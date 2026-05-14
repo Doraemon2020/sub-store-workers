@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useImpersonate } from '../contexts/ImpersonateContext';
 import { useToast } from './Toast';
+import { api } from '../api';
 import SettingsPanel from './SettingsPanel';
 import ChangePasswordModal from './ChangePasswordModal';
 import ChangeUsernameModal from './ChangeUsernameModal';
 import Footer from './Footer';
 
 const UserDashboard = () => {
-    const { token, userPath, frontendUrl, logout, updatePath, isAdmin } = useAuth();
+    const { userPath, frontendUrl, logout, updatePath, isAdmin } = useAuth();
     const { isImpersonating, impersonatedUser, impersonatedUsername, returnToAdmin } = useImpersonate();
     const toast = useToast();
 
@@ -37,19 +38,18 @@ const UserDashboard = () => {
     const effectivePath = impersonatedUser ? impersonatedUser.path : userPath;
 
     useEffect(() => {
-        fetch('/api/dashboard/user/me', { headers: { 'Authorization': `Bearer ${token}` } })
-            .then(res => res.json())
-            .then(d => {
+        api('/api/dashboard/user/me')
+            .then(({ data: d }) => {
                 setData(d);
                 setCurrentUsername(d?.username || '');
                 setAvatarUrl(d?.avatarUrl || '');
             });
-    }, [token]);
+    }, []);
 
     useEffect(() => {
-        fetch('/api/dashboard/settings/public')
-            .then(res => res.json())
-            .then(s => {
+        api('/api/dashboard/settings/public')
+            .then(({ data: s }) => {
+
                 if (typeof s?.passwordMinLength === 'number') {
                     setPasswordMinLength(s.passwordMinLength);
                 }
@@ -80,12 +80,8 @@ const UserDashboard = () => {
             const endpoint = (isImpersonating && impersonatedUser && isAdmin)
                 ? `/api/dashboard/admin/user/${impersonatedUser.id}/access-log?${params.toString()}`
                 : `/api/dashboard/user/access-log?${params.toString()}`;
-            const res = await fetch(endpoint, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${token}` },
-            });
-            const payload = await res.json().catch(() => ({}));
-            if (!res.ok) {
+            const { ok, data: payload } = await api(endpoint);
+            if (!ok) {
                 toast.error(payload?.error || '加载下载记录失败');
                 return;
             }
@@ -113,9 +109,8 @@ const UserDashboard = () => {
         setRefreshingCache(true);
         try {
             const refreshUrl = `${baseUrl}/${effectivePath}/api/utils/refresh?t=${Date.now()}`;
-            const res = await fetch(refreshUrl, { method: 'GET' });
-            const payload = await res.json().catch(() => ({}));
-            if (!res.ok) {
+            const { ok, data: payload } = await api(refreshUrl);
+            if (!ok) {
                 toast.error(payload?.error || '刷新缓存失败');
                 return;
             }
@@ -388,7 +383,6 @@ const UserDashboard = () => {
                 {/* 设置面板 */}
                 <div className="mt-6">
                     <SettingsPanel
-                        token={token}
                         expanded={settingsExpanded}
                         onToggle={() => setSettingsExpanded(!settingsExpanded)}
                         userPath={effectivePath}
@@ -416,7 +410,6 @@ const UserDashboard = () => {
 
             {showPwdModal && (
                 <ChangePasswordModal
-                    token={token}
                     isAdmin={false}
                     minLength={passwordMinLength}
                     onClose={handlePwdModalClose}
@@ -425,7 +418,6 @@ const UserDashboard = () => {
 
             {showUsernameModal && (
                 <ChangeUsernameModal
-                    token={token}
                     currentUsername={currentUsername}
                     onClose={() => setShowUsernameModal(false)}
                     onSuccess={(newName) => {

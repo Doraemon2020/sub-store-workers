@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from './Toast';
+import { api } from '../api';
 import Footer from './Footer';
 
 const SystemSettings = () => {
     const navigate = useNavigate();
-    const { token, refreshFrontendUrl } = useAuth();
+    const { refreshFrontendUrl } = useAuth();
     const toast = useToast();
 
     const [settings, setSettings] = useState({});
@@ -20,10 +21,7 @@ const SystemSettings = () => {
         const loadMmdbMeta = async () => {
             setMmdbMetaLoading(true);
             try {
-                const res = await fetch('/api/dashboard/admin/mmdb/meta', {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
+                const { data } = await api('/api/dashboard/admin/mmdb/meta');
                 setMmdbFiles(Array.isArray(data?.files) ? data.files : []);
             } catch {
                 setMmdbFiles([]);
@@ -32,11 +30,8 @@ const SystemSettings = () => {
             }
         };
 
-        fetch('/api/dashboard/admin/settings', {
-            headers: { 'Authorization': `Bearer ${token}` }
-        })
-            .then(res => res.json())
-            .then(data => {
+        api('/api/dashboard/admin/settings')
+            .then(({ data }) => {
                 setSettings(data);
                 setLoading(false);
                 loadMmdbMeta();
@@ -45,21 +40,17 @@ const SystemSettings = () => {
                 toast.error('加载设置失败');
                 setLoading(false);
             });
-    }, [token]);
+    }, []);
 
     const handleSave = async () => {
         setSaving(true);
         try {
             const { mmdbCountryUrl, mmdbAsnUrl, ...settingsToSave } = settings;
-            const res = await fetch('/api/dashboard/admin/settings', {
+            const { ok } = await api('/api/dashboard/admin/settings', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(settingsToSave)
+                body: settingsToSave
             });
-            if (res.ok) {
+            if (ok) {
                 await refreshFrontendUrl();
                 toast.success('设置已保存');
             } else {
@@ -85,19 +76,14 @@ const SystemSettings = () => {
     const handleUpdateMmdb = async () => {
         setMmdbUpdating(true);
         try {
-            const res = await fetch('/api/dashboard/admin/mmdb/update', {
+            const { ok, data } = await api('/api/dashboard/admin/mmdb/update', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
+                body: {
                     countryUrl: settings.mmdbCountryUrl || '',
                     asnUrl: settings.mmdbAsnUrl || '',
-                })
+                }
             });
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
+            if (!ok) {
                 toast.error(data?.error || 'MMDB 更新失败');
                 return;
             }

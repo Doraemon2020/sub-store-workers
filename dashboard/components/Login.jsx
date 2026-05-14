@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Turnstile } from '@marsidev/react-turnstile';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from './Toast';
+import { api } from '../api';
 
 const Login = () => {
     const { login } = useAuth();
@@ -25,8 +26,7 @@ const Login = () => {
     // 加载公开设置
     const loadPublicSettings = async () => {
         try {
-            const res = await fetch('/api/dashboard/settings/public');
-            const data = await res.json();
+            const { data } = await api('/api/dashboard/settings/public');
             const nextCaptchaType = data.captchaType || 'builtin';
             const siteKey = data.turnstileSiteKey || '';
             const isTurnstileConfigured = nextCaptchaType === 'turnstile' && siteKey;
@@ -42,8 +42,7 @@ const Login = () => {
     // 加载验证码
     const loadCaptcha = async () => {
         try {
-            const res = await fetch('/api/dashboard/captcha');
-            const data = await res.json();
+            const { data } = await api('/api/dashboard/captcha');
             setCaptchaId(data.id);
             setCaptchaSvg(data.svg);
             setCaptchaCode('');
@@ -79,19 +78,17 @@ const Login = () => {
         setLoading(true);
         setError('');
         try {
-            const res = await fetch('/api/dashboard/auth/login', {
+            const { ok, data } = await api('/api/dashboard/auth/login', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
+                body: {
                     username,
                     password,
                     ...(captchaType === 'builtin'
                         ? { captchaId, captchaCode }
                         : { turnstileToken })
-                })
+                }
             });
-            const data = await res.json();
-            if (res.ok) {
+            if (ok) {
                 if (data.mustChangePassword) {
                     toast.warning('检测到默认管理员密码，请尽快修改密码。');
                 }
