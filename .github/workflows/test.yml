@@ -47,11 +47,22 @@ jobs:
 
       - name: Start dev server
         run: |
-          pnpm run dev:workers &
+          pnpm run dev:workers > workers-dev.log 2>&1 &
           echo "DEV_PID=$!" >> "$GITHUB_ENV"
 
       - name: Wait for server
-        run: npx wait-on http://localhost:3000/api/dashboard/settings/public -t 120000
+        uses: iFaxity/wait-on-action@v1.2.1
+        with:
+          resource: http-get://127.0.0.1:3000/api/dashboard/settings/public
+          timeout: 120000
+          interval: 1000
+          httpTimeout: 10000
+          log: true
+
+      - name: Print Workers dev log on failure
+        if: failure()
+        run: |
+          cat workers-dev.log || true
 
       - name: Run API tests
         run: node scripts/test-dashboard.js http://localhost:3000
@@ -119,11 +130,22 @@ jobs:
           PORT: '8000'
           JWT_SECRET: test-jwt-secret-for-ci-testing-32chars
         run: |
-          deno task dev &
+          deno task dev > deno-dev.log 2>&1 &
           echo "DEV_PID=$!" >> "$GITHUB_ENV"
 
       - name: Wait for server
-        run: npx wait-on http://localhost:8000/api/dashboard/settings/public -t 120000
+        uses: iFaxity/wait-on-action@v1.2.1
+        with:
+          resource: http-get://127.0.0.1:8000/api/dashboard/settings/public
+          timeout: 120000
+          interval: 1000
+          httpTimeout: 10000
+          log: true
+
+      - name: Print Deno dev log on failure
+        if: failure()
+        run: |
+          cat deno-dev.log || true
 
       - name: Run API tests
         run: node scripts/test-dashboard.js http://localhost:8000

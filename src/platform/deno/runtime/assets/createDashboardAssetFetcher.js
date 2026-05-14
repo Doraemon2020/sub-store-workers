@@ -26,6 +26,8 @@ export function createDashboardAssetFetcher({ baseDir } = {}) {
                 if (filePath.endsWith('.json')) headers.set('Content-Type', 'application/json; charset=utf-8');
                 if (filePath.endsWith('.svg')) headers.set('Content-Type', 'image/svg+xml');
                 if (filePath.endsWith('.wasm')) headers.set('Content-Type', 'application/wasm');
+                if (filePath.endsWith('.woff2')) headers.set('Content-Type', 'font/woff2');
+                if (filePath.endsWith('.woff')) headers.set('Content-Type', 'font/woff');
                 debug(`[DenoAssets] hit ${relativePath} @ ${filePath}`);
                 return new Response(file, { status: 200, headers });
             } catch {
